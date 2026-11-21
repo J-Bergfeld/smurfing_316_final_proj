@@ -31,7 +31,8 @@ class Positioner:
                     candidates.append((roof, 10 if distance(p,enemy['actor']['pos']) > 90 else 2))
         if mode == 'loot':
             for key, reward in (('cubes',42),('pickups',38),('crates',22),('drops',45)):
-                for item in obs.get(key,[]):
+                items = obs.get(key,[]) if key == 'drops' else [v['item'] for v in world.loot.values() if v['kind'] == key]
+                for item in items:
                     if key=='pickups' and any(w and w['kind']==item['kind'] for w in me['weapons']): continue
                     if key=='drops' and (item.get('lands_in',0)>15 or item.get('holder') not in (None,me['id'])): continue
                     bonus = 25 * (1-me['hp']/max(1,me['max_hp'])) if key=='drops' else 0

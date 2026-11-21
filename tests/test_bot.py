@@ -53,6 +53,32 @@ class BotTests(unittest.TestCase):
         self.assertFalse(self.world.tracks[7]['visible']); self.assertLess(self.world.tracks[7]['confidence'],1)
         o['t']=10; self.world.update(o); self.assertNotIn(7,self.world.tracks)
 
+    def test_loot_memory_survives_leaving_view_and_expires(self):
+        o=observation(); o['pickups']=[{'id':8001,'kind':'laser','pos':[40,0,0]}]
+        self.world.update(o)
+        o['t']=3; o['pickups']=[]; self.world.update(o)
+        self.assertIn(8001,self.world.loot)
+        self.assertEqual(self.strategy.choose(self.world)[0],'loot')
+        o['t']=94; self.world.update(o)
+        self.assertNotIn(8001,self.world.loot)
+
+    def test_loot_absence_nearby_clears_memory(self):
+        o=observation(); o['cubes']=[{'id':5000,'pos':[2,0,0]}]; self.world.update(o)
+        o['t']=.1; o['cubes']=[]; self.world.update(o)
+        self.assertNotIn(5000,self.world.loot)
+
+    def test_approaching_zone_edge_starts_rotation(self):
+        o=observation(); o['t']=55; o['self']['pos']=[170,0,0]
+        o['zone'].update(radius=200,next_radius=100,shrink_start=60,shrink_end=110)
+        self.world.update(o)
+        self.assertTrue(self.strategy.choose(self.world)[2])
+
+    def test_stationary_combat_strafes_if_walkable(self):
+        o=observation(); o['mechs']=[enemy(100)]; self.world.update(o)
+        action=self.strategy.movement(self.world,[0,0,0],False,'attack',self.world.tracks[7])
+        self.assertAlmostEqual(action['move'][0],0)
+        self.assertGreater(abs(action['move'][1]),0)
+
     def test_commitment_and_emergency(self):
         o=observation(); self.world.update(o); self.strategy.choose(self.world)
         o['t']=.1; o['cubes']=[{'id':1,'pos':[10,0,0]}]; self.world.update(o)

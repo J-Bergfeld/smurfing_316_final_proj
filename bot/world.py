@@ -8,6 +8,7 @@ class World:
         self.config, self.arena = config, arena
         self.tracks = {}
         self.sounds = []
+        self.loot = {}
         self.last_damage = -1000
         self.last_dealt = -1000
         self.obs = None
@@ -41,6 +42,21 @@ class World:
                 if e.get('bearing') is not None:
                     self.sounds.append({'pos':[me['pos'][0]+50*math.cos(e['bearing']),me['pos'][1]+50*math.sin(e['bearing'])], 'time':now, 'kind':'damage'})
             if e['type'] == 'hit': self.last_dealt = now
+            if e['type'] == 'took' or (e['type'] == 'take_failed' and e.get('reason') == 'gone'):
+                self.loot.pop(e.get('id'), None)
+        seen = set()
+        for kind in ('cubes', 'pickups', 'crates'):
+            for item in obs.get(kind, []):
+                seen.add(item['id'])
+                self.loot[item['id']] = {'kind':kind, 'item':dict(item), 'seen':now}
+        for ident, remembered in list(self.loot.items()):
+            if ident in seen: continue
+            pos = remembered['item']['pos']; age = now-remembered['seen']
+            # Only discard on absence at close range, where we could reasonably
+            # verify it; a turn or a wall can otherwise hide a real pickup.
+            close = distance(me['pos'],pos) < 8 and abs(me['pos'][2]-pos[2]) < 4
+            if age > 90 or (close and self.arena.clear([me['pos'][0],me['pos'][1],me['pos'][2]+8], [pos[0],pos[1],pos[2]+1])):
+                del self.loot[ident]
 
     def enemies(self):
         return [v for v in self.tracks.values() if v['actor']['kind'] == 'mech']

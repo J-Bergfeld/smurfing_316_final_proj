@@ -12,16 +12,27 @@ class Strategy:
         self.waypoint = None; self.route_until = 0; self.route_goal = None; self.path = []; self.history = []
         self.projectile_replan_at = 0
         self.zone_urgent = False
+        self.target_id = None
 
     def choose(self, world):
         obs = world.obs; me = obs['self']; now = obs['t']; enemies = world.enemies()
         first_decision = self.until is None
         if first_decision: self.until = now + 2.5
-        closest = min(enemies,key=lambda e:distance(me['pos'],e['actor']['pos']) + (0 if e['visible'] else 90),default=None)
+        def target_cost(track):
+            actor = track['actor']
+            return (distance(me['pos'],actor['pos'])*.5 + actor.get('hp',1400)*.09
+                    + (0 if track['visible'] else 60) - (15 if actor['id']==self.target_id else 0))
+        closest = min(enemies,key=target_cost,default=None)
+        self.target_id = closest['actor']['id'] if closest else None
         d = distance(me['pos'],closest['actor']['pos']) if closest else 9999
         recent = now-world.last_damage < 2
         zone = obs['zone']; next_d = distance(me['pos'],zone['next_center'])
         urgency = not me.get('in_zone',True) or (next_d > zone['next_radius']-20 and now + max(0,next_d-zone['next_radius']+25)/max(1,me['stats'].get('walk_speed',11.7)) > zone['shrink_end']-4)
+        edge_gap = zone['radius'] - distance(me['pos'],zone['center'])
+        remaining = max(1,zone['shrink_end']-max(now,zone['shrink_start']))
+        edge_speed = max(0,zone['radius']-zone['next_radius']+distance(zone['center'],zone['next_center']))/remaining
+        if now >= zone['shrink_start']-14 and next_d > zone['next_radius']-20:
+            urgency = urgency or edge_gap < 22 + min(14,max(0,now+14-zone['shrink_start']))*edge_speed
         if urgency and not self.zone_urgent: self.positioner.goal_until = 0
         self.zone_urgent = urgency
         visible_threat = closest and closest['visible'] and d < 160
@@ -37,7 +48,7 @@ class Strategy:
             # Later circles require more willingness to commit than the opening.
             threshold = 1.35 if now < 100 and obs['alive'] > 9 else (1.0 if obs['alive'] > 4 else .7)
             proposed = 'attack' if ratio > threshold and not third_party else 'flee'
-        elif any(obs.get(k) for k in ('cubes','pickups','crates','drops')): proposed = 'loot'
+        elif world.loot or obs.get('drops'): proposed = 'loot'
         else: proposed = 'hold'
         projectile_threat = world.projectile_risk(me['pos']) > .15
         if projectile_threat and proposed != 'attack': proposed = 'flee'
@@ -52,7 +63,7 @@ class Strategy:
     def goal_for(self, world, mode, enemy, urgent):
         return self.positioner.goal_for(world, mode, enemy, urgent)
 
-    def movement(self, world, goal, urgent):
+    def movement(self, world, goal, urgent, mode=None, enemy=None):
         obs=world.obs; me=obs['self']; p=me['pos']; now=obs['t']; arena=self.arena
         self.history.append((now,p[:2])); self.history = [v for v in self.history if now-v[0]<1.5]
         stuck = len(self.history)>5 and now-self.history[0][0]>1 and distance(p,self.history[0][1])<2 and distance(p,goal)>8
@@ -70,6 +81,14 @@ class Strategy:
         elevated = waypoint[2]-p[2]>3 and distance(p,waypoint)<40
         dx,dy=waypoint[0]-p[0],waypoint[1]-p[1]; d=math.hypot(dx,dy)
         move=[dx/d,dy/d] if d>2 else [0,0]
+        if mode == 'attack' and enemy and enemy['visible'] and distance(p,goal)<8 and me['grounded']:
+            target=enemy['actor']['pos']; ex,ey=target[0]-p[0],target[1]-p[1]; ed=math.hypot(ex,ey)
+            if ed>1:
+                side=1 if int(now/2.5)%2==0 else -1
+                sx,sy=-ey/ed*side,ex/ed*side
+                zone=obs['zone']; nx,ny=p[0]+sx*5,p[1]+sy*5
+                if arena.walkable(nx,ny,me.get('stats',{}).get('radius',2.5),me.get('stats',{}).get('height',9)) and distance((nx,ny),zone['center']) < zone['radius']-5:
+                    move=[sx*.65,sy*.65]
         jet = elevated or (stuck and me['energy']>35)
         return {'move':move,'jump':bool(jet and me['grounded']), 'boost':bool((jet and not me['grounded']) or (urgent and me['energy']>20 and d>20))}
 
