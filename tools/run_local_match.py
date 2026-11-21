@@ -27,7 +27,16 @@ def main():
     from local_sim.game import Match
     from local_sim.geometry import Map
     from local_sim.pool import scripted
+    from local_sim import wire
     from local_sim.wire import Client
+
+    if sys.platform == "darwin":
+        # macOS does not support setting RLIMIT_AS as Linux does. Keep core
+        # dumps disabled; match memory enforcement still requires Docker/Linux.
+        import resource
+        def mac_child_limits():
+            resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        wire.child_limits = mac_child_limits
 
     with gzip.open(kit / "check/stream.jsonl.gz", "rt") as stream:
         hello = json.loads(next(stream))
