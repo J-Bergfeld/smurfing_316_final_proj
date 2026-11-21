@@ -1,36 +1,59 @@
 # Run a local competitor match
 
-From a checkout of the team's dev branch, run the commands below on macOS, Linux, or the Ubuntu terminal in VS Code. On Windows, type `wsl -d Ubuntu` in PowerShell first. A checkout at `C:\Users\jackb\mech-royal` is visible at `/mnt/c/Users/jackb/mech-royal`. Use your own checkout path. Both shells edit the same files.
+The local runner reads its lineup from the ignored file `competitors/lineup.json`.
+The lineup, downloaded repositories, and any opponent-specific dependencies stay
+on your computer and are excluded from the submission image.
 
-## First run
+## Set up a lineup
 
-On Ubuntu, install the dependencies once:
+Create `competitors/lineup.json` with a simulator checkout, one or more pinned
+opponent repositories, and their Python entry points. For example, replace the
+placeholders in this template with your own values:
 
-```bash
-sudo apt update
-sudo apt install -y git python3 build-essential
+```json
+{
+  "checkout_root": "updated",
+  "simulator": "owner--repository",
+  "opponent_python": ".venv/bin/python",
+  "required_modules": ["numpy"],
+  "opponents": [
+    {
+      "repository": "owner/repository",
+      "revision": "full-commit-hash",
+      "entrypoint": "bot.py"
+    }
+  ]
+}
 ```
 
-From the repository root:
+`simulator` identifies the checkout containing `local_sim`; its directory name
+is the repository value with `/` replaced by `--`. Paths for `checkout_root`
+and `opponent_python` are relative to the configuration file. The Python
+interpreter and required modules are optional; install whatever the selected
+opponents need in an ignored virtual environment. The simulator itself requires
+Python, Git, and a C compiler.
 
 ```bash
+python3 -m venv competitors/.venv
+competitors/.venv/bin/python -m pip install numpy==1.26.4
+python3 tools/competitor_match.py --fetch-only
 python3 tools/competitor_match.py --seed 420000
 ```
 
-Add `--trace /tmp/mech-420000.jsonl` to save our bot's observations and actions
-for local diagnostics. The trace contains game state and can become large.
+The runner fetches missing pinned checkouts into `competitors/updated/` and
+verifies existing checkout revisions. It executes the selected opponent code
+locally under your account. The match uses our root `main.py`, the local
+simulator, and the map and configuration under `arena/` and `check/`. On macOS,
+the runner does not enforce the Linux 512 MB address-space limit.
 
-To download without running a match, use `python3 tools/competitor_match.py --fetch-only`. The runner launches their Python code locally under your account. It uses a simulator, the team's root `main.py`, and the map and configuration under `arena/` and `check/`. Docker is optional for this workflow.
+Use `--config /path/to/lineup.json` to select a different configuration or
+`--opponents-dir /path/to/checkouts` to reuse existing checkouts. Add
+`--trace /tmp/mech-420000.jsonl` to save our bot's observations and actions.
+The trace contains game state and can become large.
 
-If you already have all four opponent folders, reuse them without downloading anything:
+## Compare versions
 
-```bash
-python3 tools/competitor_match.py --opponents-dir ~/mech-testing/opponents --seed 420000
-```
-
-## Compare two bot versions
-
-Save the bot files in VS Code. From the repo root, run a five-seed batch. Pick a fresh label for each version:
+Run each version on the same seeds and save the output outside the repository:
 
 ```bash
 set -o pipefail
@@ -42,16 +65,20 @@ for seed in 420000 420001 420002 420003 420004; do
 done
 ```
 
-The match runs your bot and scripted opponents in a simulated free-for-all. Output includes your placement, points (16 minus place), credited kills, elapsed game time, and late and invalid responses. Opponent stats are recorded when your placement is settled. For a fair comparison, use the same seeds, lineup, and simulator revision. These scores describe local free-for-alls. The official practice field is a cooperating house squad.
-
-The previous five-seed reference used a different, three-competitor lineup, so its scores are not directly comparable. To run a custom lineup, see `python3 tools/run_local_match.py --help`.
+The match fills unused slots with scripted opponents in a simulated
+free-for-all. Output includes placement, points, credited kills, elapsed game
+time, and late and invalid responses. For a fair comparison, use the same
+seeds, lineup, and simulator revision. These scores are not directly comparable
+to the official practice field, which uses a cooperating house squad.
 
 ## Trace a saved lineup
 
-From the project root in Ubuntu, run:
+From the project root, run:
 
-    python3 tools/replay_match.py ~/mech-testing/expanded-420002.json
+```bash
+python3 tools/replay_match.py ~/mech-testing/results/baseline/420000.json
+```
 
-Use a result JSON generated on your machine, with its opponent folders and
-Docker images available. The helper prints a new directory containing
-trace.jsonl (per-tick observations and actions) and result.json (match outcome).
+Use a result generated on your machine, with its opponent folders and Docker
+images available. The helper prints a new directory containing `trace.jsonl`
+and `result.json`.

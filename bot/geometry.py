@@ -4,6 +4,7 @@ import json
 import math
 import os
 import struct
+import time
 
 
 def distance(a, b):
@@ -106,14 +107,15 @@ class Map:
                     if not self.blocked(x,y,p['top']+.2,9): result.append([x,y,p['top']+.2])
         return sorted(result, key=lambda point:distance(pos,point))[:5]
 
-    def route(self, start, goal, radius=2.5, height=9):
+    def route(self, start, goal, radius=2.5, height=9, budget_s=.005):
         """Bounded coarse A*: return first waypoint, or None when no route is found."""
         step = 12.0
         origin = (round(start[0]/step), round(start[1]/step))
         target = (round(goal[0]/step), round(goal[1]/step))
         q = [(0, 0, origin)]; cost = {origin: 0}; parent = {}; count = 0
-        best = origin; best_h = math.dist(origin, target)
+        best = origin; best_h = math.dist(origin, target); deadline = time.perf_counter()+budget_s
         while q and count < 50:
+            if time.perf_counter() >= deadline: break
             _, g, node = heapq.heappop(q)
             if g != cost.get(node): continue
             count += 1

@@ -26,6 +26,8 @@ class Bot:
         evasive = dodge(self.world)
         if evasive is not None:
             action['move'] = evasive
+        if hasattr(self.strategy, 'motion'):
+            self.strategy.motion.record(action['move'])
         action.update(self.strategy.inventory(self.world))
         target = enemy if enemy and (mode=='attack' or (mode=='flee' and distance(obs['self']['pos'],enemy['actor']['pos'])<110)) else None
         capturing = any(drop.get('lands_in',0)<=0 and distance(obs['self']['pos'],drop['pos']) < drop.get('radius',8) for drop in obs.get('drops', []))

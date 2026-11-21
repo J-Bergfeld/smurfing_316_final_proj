@@ -29,7 +29,7 @@ for bot in opponents:
         opponent_args.extend(["--opponent-image", bot])
 
 if sim is None:
-    parser.error("This lineup needs the Eagle Eye simulator folder on this machine.")
+    parser.error("This lineup needs a local simulator folder on this machine.")
 
 seed = result["seed"]
 run_dir = Path(tempfile.mkdtemp(prefix=f"replay-{seed}-", dir=baseline.parent))
@@ -39,6 +39,9 @@ command = [
     "--sim", str(sim), "--kit", ".", "--bot", "./main.py",
     "--seed", str(seed), "--trace", str(trace), *opponent_args,
 ]
+opponent_python = root / "competitors" / ".venv" / "bin" / "python"
+if opponent_python.is_file():
+    command.extend(["--opponent-python", str(opponent_python)])
 
 print(f"Running seed {seed}. Output directory: {run_dir}", flush=True)
 match = subprocess.run(command, cwd=root, text=True, stdout=subprocess.PIPE, check=True)

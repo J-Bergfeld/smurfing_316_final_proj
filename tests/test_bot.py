@@ -11,6 +11,7 @@ from bot.strategy import Strategy
 from bot.world import World
 from main import Bot
 from bot.tactics import dodge
+from bot.movement import MovementSupport
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 with gzip.open(os.path.join(ROOT, 'check/stream.jsonl.gz'), 'rt') as f:
@@ -79,6 +80,54 @@ class BotTests(unittest.TestCase):
         action=self.strategy.movement(self.world,[0,0,0],False,'attack',self.world.tracks[7])
         self.assertAlmostEqual(action['move'][0],0)
         self.assertGreater(abs(action['move'][1]),0)
+
+    def test_combat_strafes_while_moving_to_goal(self):
+        o=observation(); o['mechs']=[enemy(100)]; self.world.update(o)
+        action=self.strategy.movement(self.world,[60,0,0],False,'attack',self.world.tracks[7])
+        self.assertGreater(action['move'][0],0)
+        self.assertGreater(abs(action['move'][1]),.1)
+
+    def test_wall_probe_selects_walkable_direction(self):
+        class WallMap(OpenMap):
+            def walkable(self,x,y,*args): return not (x>1 and abs(y)<3)
+        me=observation()['self']; motion=MovementSupport()
+        move=motion.steer(WallMap(),me,[1,0],observation()['zone'])
+        self.assertGreater(abs(move[1]),.1)
+
+    def test_stall_recovery_backs_off_then_jets(self):
+        me=observation()['self']; motion=MovementSupport(); stalled=False
+        for i in range(14):
+            motion.record([1,0]); stalled=motion.observe(me,[50,0,0],i*.1) or stalled
+        self.assertTrue(stalled)
+        back=motion.recover(me,1.3); self.assertLess(back['move'][0],0); self.assertFalse(back['jump'])
+        launch=motion.recover(me,2); self.assertTrue(launch['jump'])
+        me['grounded']=False; self.assertTrue(motion.recover(me,2.1)['boost'])
+        me['pos'][2]=8; self.assertFalse(motion.recover(me,2.2)['boost'])
+
+    def test_no_stall_recovery_when_holding(self):
+        me=observation()['self']; motion=MovementSupport()
+        for i in range(20): self.assertFalse(motion.observe(me,[50,0,0],i*.1))
+
+    def test_roof_hop_waits_for_energy(self):
+        o=observation(); o['self']['energy']=20; self.world.update(o)
+        action=self.strategy.movement(self.world,[20,0,20],False)
+        self.assertFalse(action['jump']); self.assertEqual(action['move'],[0,0])
+
+    def test_active_hop_does_not_replan_in_midair(self):
+        class CountingNav:
+            def __init__(self): self.calls=0
+            def route(self,start,goal,energy): self.calls+=1; return [goal[:]]
+        nav=CountingNav(); strategy=Strategy(self.map,self.combat,HELLO['config'],navigation=nav)
+        o=observation(); self.world.update(o)
+        self.assertTrue(strategy.movement(self.world,[20,0,15],False)['jump'])
+        o['t']=2; o['self']['grounded']=False; o['self']['pos'][2]=2; self.world.update(o)
+        self.assertTrue(strategy.movement(self.world,[20,0,15],False)['boost'])
+        self.assertEqual(nav.calls,1)
+
+    def test_falling_does_not_start_unplanned_jet(self):
+        o=observation(); o['self']['grounded']=False; self.world.update(o)
+        action=self.strategy.movement(self.world,[20,0,20],False)
+        self.assertFalse(action['boost'])
 
     def test_near_enemy_interrupts_even_if_preferred_target_is_far(self):
         o=observation(); far=enemy(190); far['hp']=1
@@ -179,6 +228,19 @@ class BotTests(unittest.TestCase):
         self.assertGreater(self.strategy.movement(self.world,[100,0,0],False)['move'][0],0)
         o['t']=.1; self.world.update(o)
         self.assertLess(self.strategy.movement(self.world,[-100,0,0],False)['move'][0],0)
+
+    def test_failed_graph_route_uses_bounded_fallback(self):
+        class NoRoute:
+            def route(self,*args): return None
+        class BoundedMap(OpenMap):
+            def route(self,start,goal,radius,height,budget):
+                self.budget=budget
+                return goal
+        arena=BoundedMap(); world=World(HELLO['config'],arena)
+        strategy=Strategy(arena,self.combat,HELLO['config'],navigation=NoRoute())
+        o=observation(); world.update(o)
+        self.assertGreater(strategy.movement(world,[20,0,0],False)['move'][0],0)
+        self.assertLessEqual(arena.budget,.005)
 
     def test_roof_climb_uses_jump_and_jet(self):
         o=observation(); self.world.update(o)

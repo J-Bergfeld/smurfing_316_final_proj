@@ -3,6 +3,7 @@ import math
 from .geometry import distance, angle_diff
 from .positioning import Positioner
 from .loadout import pickup_slot
+from .movement import MovementSupport
 
 
 class Strategy:
@@ -10,10 +11,14 @@ class Strategy:
         self.arena, self.combat, self.config, self.profile = arena, combat, config, profile
         self.navigation = navigation
         self.mode = 'hold'; self.until = None; self.positioner = Positioner(arena)
-        self.waypoint = None; self.route_until = 0; self.route_goal = None; self.path = []; self.history = []
+        self.route_until = 0; self.route_goal = None; self.path = []
         self.projectile_replan_at = 0
         self.zone_urgent = False
         self.target_id = None
+        self.motion = MovementSupport()
+        self.hop = None
+        self.strafe_sign = 1
+        self.strafe_until = 0
 
     def choose(self, world):
         obs = world.obs; me = obs['self']; now = obs['t']; enemies = world.enemies()
@@ -74,15 +79,25 @@ class Strategy:
 
     def movement(self, world, goal, urgent, mode=None, enemy=None):
         obs=world.obs; me=obs['self']; p=me['pos']; now=obs['t']; arena=self.arena
-        self.history.append((now,p[:2])); self.history = [v for v in self.history if now-v[0]<1.5]
-        stuck = len(self.history)>5 and now-self.history[0][0]>1 and distance(p,self.history[0][1])<2 and distance(p,goal)>8
+        stuck = self.motion.observe(me,goal,now)
+        recovery = self.motion.recover(me,now)
+        if recovery is not None:
+            if self.motion.recovery['phase']=='back':
+                recovery['move']=self.motion.steer(arena,me,recovery['move'],obs['zone'])
+            self.motion.record(recovery['move'])
+            self.path=[]
+            return recovery
         while self.path and distance(p,self.path[0])<6 and abs(p[2]-self.path[0][2])<3:
             self.path.pop(0)
         changed = self.route_goal is None or distance(goal,self.route_goal)>12 or abs(goal[2]-self.route_goal[2])>3
-        if changed or stuck or not self.path or now >= self.route_until:
+        # Hold the active climb path while airborne; a partial replan can
+        # otherwise redirect the bot halfway through a roof transition.
+        climbing = self.hop is not None and not me['grounded'] and not changed and bool(self.path)
+        if not climbing and (changed or stuck or not self.path or now >= self.route_until):
             path = self.navigation.route(p,goal,me['energy']) if self.navigation else None
             if not path:
-                fallback = arena.route(p,goal,me.get('stats',{}).get('radius',2.5),me.get('stats',{}).get('height',9))
+                # Keep the fallback search bounded near complex polygons.
+                fallback = arena.route(p,goal,me.get('stats',{}).get('radius',2.5),me.get('stats',{}).get('height',9),.005)
                 path = [fallback or goal]
             self.path=path; self.route_until=now+1.5
             self.route_goal=goal[:]
@@ -90,17 +105,36 @@ class Strategy:
         elevated = waypoint[2]-p[2]>3 and distance(p,waypoint)<40
         dx,dy=waypoint[0]-p[0],waypoint[1]-p[1]; d=math.hypot(dx,dy)
         move=[dx/d,dy/d] if d>2 else [0,0]
-        if mode == 'attack' and enemy and enemy['visible'] and distance(p,goal)<8 and me['grounded']:
+        guns=[w for w in me.get('weapons',[]) if w and w['kind']=='gun']
+        reloading=any(w.get('reload',0)>0 or w.get('ammo',1)<=w.get('stats',{}).get('mag',12)*.25 for w in guns)
+        if mode == 'attack' and enemy and enemy['visible'] and me['grounded'] and not reloading and now-world.laser_shot_at>1.65:
             target=enemy['actor']['pos']; ex,ey=target[0]-p[0],target[1]-p[1]; ed=math.hypot(ex,ey)
             if ed>1:
-                side=1 if int(now/2.5)%2==0 else -1
-                sx,sy=-ey/ed*side,ex/ed*side
-                zone=obs['zone']; nx,ny=p[0]+sx*5,p[1]+sy*5
-                safe = arena.supported(nx,ny,p[2],me.get('stats',{}).get('radius',2.5),me.get('stats',{}).get('height',9)) if hasattr(arena,'supported') else arena.walkable(nx,ny,me.get('stats',{}).get('radius',2.5),me.get('stats',{}).get('height',9))
-                if safe and distance((nx,ny),zone['center']) < zone['radius']-5:
-                    move=[sx*.65,sy*.65]
-        jet = elevated or (stuck and me['energy']>35)
-        return {'move':move,'jump':bool(jet and me['grounded']), 'boost':bool((jet and not me['grounded']) or (urgent and me['energy']>20 and d>20))}
+                if now>=self.strafe_until:
+                    self.strafe_sign *= -1
+                    self.strafe_until=now+1.2+((obs['tick']*7919+me['id'])%13)/10
+                sx,sy=-ey/ed*self.strafe_sign,ex/ed*self.strafe_sign
+                weight=1 if distance(p,goal)<8 else .4
+                mx,my=move[0]+sx*weight,move[1]+sy*weight; length=math.hypot(mx,my)
+                if length>.01: move=[mx/length,my/length]
+        jump=False; boost=False
+        if self.hop and (now-self.hop['t']>6 or (me['grounded'] and now-self.hop['t']>.4)):
+            self.hop=None
+        if elevated and me['grounded'] and self.hop is None:
+            required=2.4*max(0,waypoint[2]-p[2]-2)+8
+            if me['energy']>=required:
+                self.hop={'t':now,'height':waypoint[2]}; jump=True
+            elif not urgent and not (enemy and enemy['visible']):
+                move=[0,0]  # let energy recover at the base of a planned hop
+        if self.hop and not me['grounded']:
+            boost=me['energy']>8 and p[2]<self.hop['height']+1
+        elif me['grounded']:
+            threatened = world.obs['t']-world.last_damage<3 or bool(enemy and enemy['visible'] and distance(p,enemy['actor']['pos'])<140)
+            boost=bool(d>12 and ((urgent and me['energy']>20) or (mode=='flee' and threatened and me['energy']>45)))
+            if not jump:
+                move=self.motion.steer(arena,me,move,obs['zone'])
+        self.motion.record(move)
+        return {'move':move,'jump':jump,'boost':boost}
 
     def inventory(self, world):
         obs=world.obs; me=obs['self']; out={}; offer=obs.get('offer')

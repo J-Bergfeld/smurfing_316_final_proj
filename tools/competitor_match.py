@@ -1,5 +1,7 @@
-"""Run the team's fixed competitor lineup. Fetch pinned opponents on first use."""
+"""Run a locally configured competitor lineup with pinned checkouts."""
 import argparse
+import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -7,12 +9,7 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-REPOS = {
-    "shanmukha-here/eagle-eye-mech-royale": "6c7bb86707e76a288050da27e945f076f78227cc",
-    "atharvatripathi2026/gtgoats_mech_royale": "ad3ffbb4e16e501790d5fbe5ca68dbd8497421d3",
-    "devakchow/team-kanyaraasi-mech-royale": "52f5adf1b12ad360368545ab8b676ff681f1669f",
-    "AbhirajTiwari12/mech-royale-bot": "2969326aed37fc94b98e19c1128e1b9d32fa284f",
-}
+DEFAULT_CONFIG = ROOT / "competitors" / "lineup.json"
 
 
 def fetch(repo, revision, cache):
@@ -35,27 +32,52 @@ def fetch(repo, revision, cache):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG,
+                        help="Ignored local lineup JSON (default: competitors/lineup.json).")
     parser.add_argument("--seed", type=int, default=420000)
-    parser.add_argument("--opponents-dir", type=Path,
-                        help="Use the already unpacked mech-competitor-review folders.")
+    parser.add_argument("--opponents-dir", type=Path, help="Use checkouts from this directory without fetching.")
     parser.add_argument("--fetch-only", action="store_true", help="Download the pinned opponents without running a match.")
     parser.add_argument("--trace", type=Path, help="Write subject observations and actions to a JSONL file.")
     args = parser.parse_args()
-    folders = []
-    for repo, revision in REPOS.items():
-        folder = (args.opponents_dir.expanduser().resolve() / repo.replace("/", "--")
-                  if args.opponents_dir else fetch(repo, revision, ROOT / "competitors"))
-        if not (folder / "bot.py").is_file():
-            parser.error(f"Missing opponent: {folder / 'bot.py'}")
-        folders.append(folder)
+    config_path = args.config.expanduser().resolve()
+    if not config_path.is_file():
+        parser.error(f"Missing local lineup: {config_path}; see docs/local-simulator.md")
+    try:
+        config = json.loads(config_path.read_text())
+        opponents = config["opponents"]
+        if not isinstance(opponents, list) or not opponents:
+            raise ValueError("opponents must be a non-empty list")
+        cache = (config_path.parent / config.get("checkout_root", "updated")).resolve()
+        cache = args.opponents_dir.expanduser().resolve() if args.opponents_dir else cache
+        folders, entries = {}, []
+        for opponent in opponents:
+            repo, revision = opponent["repository"], opponent["revision"]
+            name = repo.replace("/", "--")
+            folder = cache / name if args.opponents_dir else fetch(repo, revision, cache)
+            entry = folder / opponent.get("entrypoint", "bot.py")
+            if not entry.is_file():
+                raise ValueError(f"Missing opponent entry point: {entry}")
+            folders[name] = folder
+            entries.append(entry)
+        simulator = folders[config["simulator"]]
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        parser.error(f"Invalid local lineup: {exc}")
     if args.fetch_only:
-        for folder in folders:
+        for folder in folders.values():
             print(folder)
         return
-    cmd = [sys.executable, str(ROOT / "tools/run_local_match.py"), "--sim", str(folders[0]),
+    cmd = [sys.executable, str(ROOT / "tools/run_local_match.py"), "--sim", str(simulator),
            "--kit", str(ROOT), "--bot", str(ROOT / "main.py"), "--seed", str(args.seed)]
-    for folder in folders:
-        cmd.extend(["--opponent", str(folder / "bot.py")])
+    python_path = config.get("opponent_python")
+    opponent_python = (config_path.parent / python_path).resolve() if python_path else None
+    if opponent_python and opponent_python.is_file():
+        cmd.extend(["--opponent-python", str(opponent_python)])
+    else:
+        missing = [name for name in config.get("required_modules", []) if importlib.util.find_spec(name) is None]
+        if missing:
+            parser.error(f"Opponent environment missing modules: {', '.join(missing)}; see docs/local-simulator.md")
+    for entry in entries:
+        cmd.extend(["--opponent", str(entry)])
     if args.trace:
         cmd.extend(["--trace", str(args.trace.expanduser().resolve())])
     os.chdir(ROOT)

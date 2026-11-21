@@ -1,4 +1,4 @@
-"""Run the current bot against a repeatable scripted field using Eagle Eye's engine."""
+"""Run the current bot against a repeatable local field."""
 import argparse
 from contextlib import ExitStack
 import gzip
@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 
 
 def main():
@@ -18,6 +19,7 @@ def main():
     parser.add_argument("--trace", type=Path, help="Write subject observations and actions to JSONL.")
     parser.add_argument("--opponent", action="append", type=Path, default=[],
                         help="Python bot entry point. Repeat to fill more FFA slots.")
+    parser.add_argument("--opponent-python", type=Path, help="Python interpreter used for opponent entry points.")
     parser.add_argument("--opponent-image", action="append", default=[],
                         help="Locally built mechfight Docker image, for any language.")
     args = parser.parse_args()
@@ -51,7 +53,8 @@ def main():
         entrants = [(str(bot), [sys.executable, "-u", str(bot)], False)]
         for entry in args.opponent:
             path = entry.resolve(strict=True)
-            entrants.append((str(path), [sys.executable, "-u", str(path)], False))
+            interpreter = str(args.opponent_python.resolve(strict=True)) if args.opponent_python else sys.executable
+            entrants.append((str(path), [interpreter, "-u", str(path)], False))
         for image in args.opponent_image:
             command = ["docker", "run", "--rm", "-i", "--network", "none", "--read-only",
                        "--memory", "512m", "--cpus", "1", "--user", "65534:65534",
@@ -81,9 +84,14 @@ def main():
                         if mech.id in clients:
                             client = clients[mech.id]
                             observation = match.obs(mech)
+                            late_before, bad_before = client.late, client.bad
+                            started = time.perf_counter()
                             mech.action = client.act(observation)
                             if trace and mech.id == player.id:
-                                trace.write(json.dumps({"type":"step", "obs":observation, "action":mech.action}, separators=(",", ":")) + "\n")
+                                trace.write(json.dumps({"type":"step", "obs":observation, "action":mech.action,
+                                                        "elapsed_ms":(time.perf_counter()-started)*1000,
+                                                        "late":client.late-late_before,
+                                                        "invalid":client.bad-bad_before}, separators=(",", ":")) + "\n")
                             if client.dead:
                                 raise SystemExit(f"Bot stopped during match: {names[mech.id]}")
                         else:
