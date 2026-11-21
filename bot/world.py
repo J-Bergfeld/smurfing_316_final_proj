@@ -45,6 +45,20 @@ class World:
     def enemies(self):
         return [v for v in self.tracks.values() if v['actor']['kind'] == 'mech']
 
+    def projectile_risk(self, pos, horizon=1.0):
+        """Approximate closest approach of visible projectiles to a mech center."""
+        risk = 0.0
+        center = [pos[0], pos[1], pos[2] + self.obs['self'].get('stats', {}).get('height', 9)/2]
+        for projectile in self.obs.get('projectiles', []):
+            rel = [projectile['pos'][i]-center[i] for i in range(3)]
+            vel = projectile['vel']; speed2 = sum(v*v for v in vel)
+            if speed2 < 1: continue
+            t = max(0, min(horizon, -sum(rel[i]*vel[i] for i in range(3))/speed2))
+            miss = math.sqrt(sum((rel[i]+vel[i]*t)**2 for i in range(3)))
+            radius = 12 if projectile['kind'] == 'mortar' else 6
+            if miss < radius: risk += (1-miss/radius) * (1-t/(horizon+0.1))
+        return risk
+
     def threat(self, pos):
         value = 0
         for t in self.enemies():
@@ -52,4 +66,4 @@ class World:
             value += t['confidence'] * max(0, 1-d/240)**2
         for s in self.sounds:
             value += .18 * max(0, 1-distance(pos,s['pos'])/130) * max(0,1-(self.obs['t']-s['time'])/4)
-        return value
+        return value + self.projectile_risk(pos) * 1.5

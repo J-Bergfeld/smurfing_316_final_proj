@@ -80,6 +80,21 @@ class Map:
         z = self.height(x, y) + .1
         return not any(self.blocked(x+dx, y+dy, z, height) for dx,dy in ((0,0),(radius,0),(-radius,0),(0,radius),(0,-radius)))
 
+    def roof_candidates(self, pos, radius=110):
+        """Find nearby solid roofs; returned points are geometric candidates, not guaranteed landings."""
+        result = []
+        seen = set()
+        for gx in range(math.floor((pos[0]-radius)/40), math.floor((pos[0]+radius)/40)+1):
+            for gy in range(math.floor((pos[1]-radius)/40), math.floor((pos[1]+radius)/40)+1):
+                for idx in self.grid.get((gx,gy), ()):
+                    if idx in seen: continue
+                    seen.add(idx); p = self.prisms[idx]
+                    a,b,c,d = p['bbox']; x=(a+c)/2; y=(b+d)/2
+                    if distance(pos,(x,y)) > radius or not inside(x,y,p['ring']) or any(inside(x,y,h) for h in p.get('holes', [])): continue
+                    if p['top'] <= pos[2]+2 or p['top'] > pos[2]+60: continue
+                    if not self.blocked(x,y,p['top']+.2,9): result.append([x,y,p['top']+.2])
+        return sorted(result, key=lambda point:distance(pos,point))[:5]
+
     def route(self, start, goal, radius=2.5, height=9):
         """Bounded coarse A*: return first waypoint, or None when no route is found."""
         step = 12.0

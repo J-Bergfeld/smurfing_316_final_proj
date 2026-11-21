@@ -59,8 +59,9 @@ Attach `debug` to any action (protocol.md §6) to record lines, points, and labe
 ## Botted Out bot
 
 The repository root now contains a Python submission image. `main.py` runs the
-bot; `bot/world.py`, `bot/strategy.py`, `bot/geometry.py`, and `bot/combat.py`
-separate perception, high-level decisions, map/navigation, and weapons. The
+bot; `bot/world.py`, `bot/strategy.py`, `bot/positioning.py`, `bot/navigation.py`,
+`bot/geometry.py`, and `bot/combat.py` separate perception, decisions, position
+scoring, route planning, map geometry, and weapons. The
 practice profile assumes coordinated opponents. Set `BOT_PROFILE=final` in the
 image environment to enable more conservative multi-opponent behavior; make that
 choice in the Dockerfile before submitting a final-oriented build.
@@ -72,12 +73,16 @@ docker build --platform linux/amd64 -t botted-out .
 python3 check/check.py --map-dir /arena -- docker run --rm -i --network none --cpus 1 --memory 512m --read-only --tmpfs /tmp:rw,size=64m --user 65534:65534 -v "$PWD/arena:/arena:ro" botted-out
 ```
 
-The tests include small reactive movement scenarios and deterministic component
+The tests include small closed-loop movement scenarios and deterministic component
 tests. The supplied checker replays observations; neither it nor the local
 scenarios is the real match engine, and passing them does not establish match
-strength. Map collision/line-of-sight sampling, route search, threat estimates,
-roof access, and third-party inference are approximations. The bot does not
-model foliage occlusion or reproduce full projectile and flight physics. Test
+strength. The position scorer considers rooftop candidates, approximate projectile
+approach, travel exposure, and cover during gun reloads. Map collision/line-of-sight
+sampling, route search, threat estimates, roof access, and third-party inference
+are approximations. Navigation uses a coarse ground-and-roof graph with walk,
+jet-ascent, and drop edges; it is not a complete collision-exact navigation
+mesh. The bot does not model
+foliage occlusion or reproduce full projectile and flight physics. Test
 and tune against official practice scores before relying on a policy. Record
 commit, profile, changed feature, submission time, and score for each run; the
 rules allow four submissions per hour and rank the best practice result.

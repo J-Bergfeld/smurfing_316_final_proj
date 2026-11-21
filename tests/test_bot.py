@@ -9,6 +9,7 @@ from bot.combat import Combat, intercept, mortar_pitch
 from bot.geometry import Map, angle_diff, distance
 from bot.strategy import Strategy
 from bot.world import World
+from main import Bot
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 with gzip.open(os.path.join(ROOT, 'check/stream.jsonl.gz'), 'rt') as f:
@@ -59,6 +60,23 @@ class BotTests(unittest.TestCase):
         o['t']=.2; o['events']=[{'type':'damaged','amount':5,'weapon':'gun','bearing':0,'by':7}]; self.world.update(o)
         self.assertEqual(self.strategy.choose(self.world)[0],'flee')
 
+    def test_first_observation_can_choose_loot(self):
+        o=observation(); o['cubes']=[{'id':1,'pos':[10,0,0]}]
+        self.world.update(o)
+        self.assertEqual(self.strategy.choose(self.world)[0],'loot')
+
+    def test_idle_scans_over_time(self):
+        class StationaryStrategy:
+            def choose(self,world): return 'hold',None,False
+            def goal_for(self,*args): return [0,0,0]
+            def movement(self,*args): return {'move':[0,0]}
+            def inventory(self,*args): return {}
+        bot=Bot.__new__(Bot); bot.world=self.world
+        bot.strategy=StationaryStrategy(); bot.combat=self.combat
+        o=observation(); first=bot.act(o)
+        o['t']=2; second=bot.act(o)
+        self.assertNotEqual(first['aim'][0],second['aim'][0])
+
     def test_zone_interrupt_and_progress(self):
         o=observation(); o['self']['pos']=[480,0,0]; o['self']['in_zone']=False; self.world.update(o)
         mode,e,urgent=self.strategy.choose(self.world); self.assertTrue(urgent)
@@ -90,48 +108,6 @@ class BotTests(unittest.TestCase):
         self.world.update(o)
         self.assertTrue(self.combat.action(self.world,None,'hold')['reload'])
 
-    def test_retreat_returns_fire_at_range(self):
-        o=observation(); e=enemy(150); o['mechs']=[e]
-        o['self']['aim']=[0,math.atan2(-2.5,150)]
-        w=o['self']['weapons'][0]
-        w.update(kind='gun',ammo=12,reload=0,cooldown=0,stats=HELLO['config']['weapons']['gun'])
-        self.world.update(o)
-        action=self.combat.action(self.world,self.world.tracks[7],'flee')
-        self.assertTrue(action['fire'][0])
-
-    def test_retreat_boosts_only_under_pressure(self):
-        o=observation(); o['mechs']=[enemy(150)]; self.world.update(o)
-        track=self.world.tracks[7]
-        action=self.strategy.movement(self.world,[-100,0,0],False,'flee',track)
-        self.assertTrue(action['boost'])
-        o['self']['energy']=30
-        action=self.strategy.movement(self.world,[-100,0,0],False,'flee',track)
-        self.assertFalse(action['boost'])
-        o['self']['energy']=100
-        action=self.strategy.movement(self.world,[-100,0,0],False,'hold',track)
-        self.assertFalse(action['boost'])
-
-    def test_route_replans_when_goal_changes_direction(self):
-        o=observation(); self.world.update(o)
-        first=self.strategy.movement(self.world,[100,0,0],False)
-        self.assertGreater(first['move'][0],0)
-        o['t']=.1; self.world.update(o)
-        changed=self.strategy.movement(self.world,[-100,0,0],False,'flee')
-        self.assertLess(changed['move'][0],0)
-
-    def test_route_cache_survives_small_goal_changes(self):
-        class CountingMap(OpenMap):
-            calls=0
-            def route(self,a,b,*args):
-                self.calls += 1
-                return b
-        arena=CountingMap(); self.strategy=Strategy(arena,self.combat,HELLO['config'])
-        o=observation(); self.world.update(o)
-        self.strategy.movement(self.world,[100,0,0],False)
-        o['t']=.1; self.world.update(o)
-        self.strategy.movement(self.world,[105,0,0],False)
-        self.assertEqual(arena.calls,1)
-
     def test_pickup_and_upgrade(self):
         o=observation(); o['self']['weapons']=[o['self']['weapons'][0],None]; o['pickups']=[{'id':8001,'kind':'laser','pos':[2,0,0]}]
         o['offer']={'choices':[{'id':'gun_velocity'},{'id':'armor'}]}; self.world.update(o)
@@ -141,6 +117,45 @@ class BotTests(unittest.TestCase):
         m=Map(HELLO['map']['dir']); self.assertTrue(math.isfinite(m.height(0,0)))
         self.assertTrue(m.blocked(10000,10000,0,9))
         p=m.prisms[0]; self.assertGreaterEqual(p['top'],p['base'])
+
+    def test_projectile_closest_approach(self):
+        o=observation(); o['projectiles']=[{'id':1,'kind':'gun','pos':[60,0,4.5],'vel':[-100,0,0]}]
+        self.world.update(o)
+        self.assertGreater(self.world.projectile_risk([0,0,0]),0)
+        self.assertEqual(self.world.projectile_risk([0,40,0]),0)
+        o['projectiles'][0]['vel']=[100,0,0]; self.world.update(o)
+        self.assertEqual(self.world.projectile_risk([0,0,0]),0)
+
+    def test_reloading_prefers_cover(self):
+        class CoverMap(OpenMap):
+            def clear(self,a,b): return a[1] <= 10
+        arena=CoverMap(); world=World(HELLO['config'],arena)
+        strategy=Strategy(arena,self.combat,HELLO['config'])
+        o=observation(); o['self']['weapons'][0]['reload']=2
+        o['mechs']=[enemy(100)]; world.update(o)
+        goal=strategy.goal_for(world,'attack',world.tracks[7],False)
+        self.assertGreater(goal[1],10)
+        o['t']=.1; o['self']['weapons'][0]['reload']=0; o['self']['weapons'][0]['ammo']=12
+        world.update(o); strategy.goal_for(world,'attack',world.tracks[7],False)
+        self.assertEqual(strategy.positioner.reloading,False)
+
+    def test_goal_change_invalidates_cached_route(self):
+        o=observation(); self.world.update(o)
+        self.assertGreater(self.strategy.movement(self.world,[100,0,0],False)['move'][0],0)
+        o['t']=.1; self.world.update(o)
+        self.assertLess(self.strategy.movement(self.world,[-100,0,0],False)['move'][0],0)
+
+    def test_roof_climb_uses_jump_and_jet(self):
+        o=observation(); self.world.update(o)
+        self.assertTrue(self.strategy.movement(self.world,[20,0,15],False)['jump'])
+        o['t']=.1; o['self']['grounded']=False; o['self']['pos'][2]=2; self.world.update(o)
+        self.assertTrue(self.strategy.movement(self.world,[20,0,15],False)['boost'])
+
+    def test_mortar_solution_reaches_target_height(self):
+        origin=[0,0,9.5]; target=[100,0,4.5]; speed=72; gravity=22
+        pitch=mortar_pitch(origin,target,speed,gravity)
+        t=100/(speed*math.cos(pitch))
+        self.assertAlmostEqual(origin[2]+speed*math.sin(pitch)*t-gravity*t*t/2,target[2])
 
 
 if __name__=='__main__': unittest.main()

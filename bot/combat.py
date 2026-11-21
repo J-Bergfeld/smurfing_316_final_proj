@@ -38,12 +38,17 @@ class Combat:
         for w in me.get('weapons',[]):
             if not w: continue
             s = w['stats']; kind = w['kind']
-            if kind == 'gun' and d <= s.get('range',230): our += s.get('damage',45)/max(.1,s.get('cooldown',.24))*.55
+            if kind == 'gun' and d <= s.get('range',230):
+                ready = .35 if w.get('reload',0)>0 or w.get('ammo',1)==0 else 1
+                our += ready*s.get('damage',45)/max(.1,s.get('cooldown',.24))*.55
             if kind == 'laser' and d <= s.get('range',280): our += s.get('damage',315)/(s.get('charge',.75)+s.get('cooldown',1.65))*.65
             if kind == 'lightning' and d <= s.get('range',45): our += s.get('damage',60)/max(.1,s.get('cooldown',.25))*.8
             if kind == 'mortar' and 20 < d < 200: our += s.get('damage',200)/max(.1,s.get('cooldown',2.6))*.5
         weapons = enemy.get('weapons',['gun']); incoming = 65 + (55 if 'laser' in weapons and d < 280 else 0) + (100 if 'lightning' in weapons and d < 50 else 0)
         incoming *= max(1, count*.8)
+        bearing = math.atan2(me['pos'][1]-enemy['pos'][1],me['pos'][0]-enemy['pos'][0])
+        if abs(angle_diff(bearing,enemy.get('aim',[bearing])[0])) > math.pi/2:
+            our *= self.config.get('mech',{}).get('rear_mult',1.5)
         return (our/max(1,enemy.get('hp',1400))) / (incoming/max(1,me['hp']))
 
     def action(self, world, target, mode):
@@ -71,8 +76,10 @@ class Combat:
             if pitch is not None: aim[1] = pitch
         out['aim'] = aim
         yaw_error = abs(angle_diff(aim[0],me['aim'][0])); pitch_error = abs(aim[1]-me['aim'][1])
-        aligned = yaw_error < max(.018,math.atan2(2.0,max(1,d))) and pitch_error < max(.025, math.atan2(3.0,max(1,d)))
+        airborne = not me.get('grounded',True)
+        aligned = yaw_error < max(.018,math.atan2(1.5 if airborne else 2.0,max(1,d))) and pitch_error < max(.025, math.atan2(2.0 if airborne else 3.0,max(1,d)))
         clear = target.get('visible',False) and world.arena.clear(origin,[pos[0],pos[1],pos[2]+height])
+        if mode == 'flee' and actor.get('kind') == 'mech': clear = clear and d < 110
         for i,w in enumerate(weapons[:2]):
             if not w: continue
             s = w['stats']; kind = w['kind']; cd = w.get('cooldown',0)
