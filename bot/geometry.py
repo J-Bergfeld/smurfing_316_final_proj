@@ -80,6 +80,17 @@ class Map:
         z = self.height(x, y) + .1
         return not any(self.blocked(x+dx, y+dy, z, height) for dx,dy in ((0,0),(radius,0),(-radius,0),(0,radius),(0,-radius)))
 
+    def supported(self, x, y, z, radius=2.5, height=9):
+        """Conservative footing check for ground or a roof at the current height."""
+        if abs(z-self.height(x,y)) < 2:
+            return self.walkable(x,y,radius,height)
+        for dx,dy in ((0,0),(radius,0),(-radius,0),(0,radius),(0,-radius)):
+            sx,sy=x+dx,y+dy
+            if not any(abs(solid['top']-z)<2 for solid in self.solids(sx,sy)):
+                return False
+            if self.blocked(sx,sy,z+.1,height): return False
+        return True
+
     def roof_candidates(self, pos, radius=110):
         """Find nearby solid roofs; returned points are geometric candidates, not guaranteed landings."""
         result = []

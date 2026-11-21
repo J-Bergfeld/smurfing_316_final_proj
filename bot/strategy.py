@@ -2,6 +2,7 @@
 import math
 from .geometry import distance, angle_diff
 from .positioning import Positioner
+from .loadout import pickup_slot
 
 
 class Strategy:
@@ -22,7 +23,11 @@ class Strategy:
             actor = track['actor']
             return (distance(me['pos'],actor['pos'])*.5 + actor.get('hp',1400)*.09
                     + (0 if track['visible'] else 60) - (15 if actor['id']==self.target_id else 0))
+        previous_target = self.target_id
         closest = min(enemies,key=target_cost,default=None)
+        close_visible = [e for e in enemies if e['visible'] and distance(me['pos'],e['actor']['pos']) < 45]
+        if close_visible:
+            closest = min(close_visible,key=lambda e:distance(me['pos'],e['actor']['pos']))
         self.target_id = closest['actor']['id'] if closest else None
         d = distance(me['pos'],closest['actor']['pos']) if closest else 9999
         recent = now-world.last_damage < 2
@@ -35,10 +40,14 @@ class Strategy:
             urgency = urgency or edge_gap < 22 + min(14,max(0,now+14-zone['shrink_start']))*edge_speed
         if urgency and not self.zone_urgent: self.positioner.goal_until = 0
         self.zone_urgent = urgency
-        visible_threat = closest and closest['visible'] and d < 160
+        # Target preference may favor a weak enemy farther away; do not let it
+        # hide a different opponent who is an immediate danger.
+        visible_threat = any(e['visible'] and distance(me['pos'],e['actor']['pos']) < 160 for e in enemies)
         nearby_count = sum(distance(me['pos'],e['actor']['pos'])<220 and e['confidence']>.3 for e in enemies)
-        ratio = self.combat.estimate(me,closest['actor'],nearby_count) if closest else 0
+        engaged = bool(closest and ((self.mode=='attack' and previous_target==closest['actor']['id']) or (recent and world.last_damage_by==closest['actor']['id'])))
+        ratio = self.combat.estimate(me,closest['actor'],nearby_count,engaged=engaged) if closest else 0
         nearby = [e['actor'] for e in enemies if e['visible'] and distance(me['pos'],e['actor']['pos']) < 180]
+        projectile_threat = world.projectile_risk(me['pos']) > .15
         # A second nearby combatant is enough to disengage an existing fight;
         # before engaging, require evidence that two enemies face each other.
         fighting = any(abs(angle_diff(a.get('aim',[0])[0], math.atan2(b['pos'][1]-a['pos'][1], b['pos'][0]-a['pos'][0]))) < .35 for a in nearby for b in nearby if a['id'] != b['id'] and distance(a['pos'],b['pos'])<200)
@@ -48,9 +57,9 @@ class Strategy:
             # Later circles require more willingness to commit than the opening.
             threshold = 1.35 if now < 100 and obs['alive'] > 9 else (1.0 if obs['alive'] > 4 else .7)
             proposed = 'attack' if ratio > threshold and not third_party else 'flee'
+        elif me['hp'] < me['max_hp']*.9 and me.get('in_zone',True) and not projectile_threat: proposed = 'recover'
         elif world.loot or obs.get('drops'): proposed = 'loot'
         else: proposed = 'hold'
-        projectile_threat = world.projectile_risk(me['pos']) > .15
         if projectile_threat and proposed != 'attack': proposed = 'flee'
         emergency = urgency or recent or projectile_threat or bool(visible_threat and self.mode not in ('attack','flee')) or third_party
         if proposed != self.mode and (first_decision or now >= self.until or emergency):
@@ -87,7 +96,8 @@ class Strategy:
                 side=1 if int(now/2.5)%2==0 else -1
                 sx,sy=-ey/ed*side,ex/ed*side
                 zone=obs['zone']; nx,ny=p[0]+sx*5,p[1]+sy*5
-                if arena.walkable(nx,ny,me.get('stats',{}).get('radius',2.5),me.get('stats',{}).get('height',9)) and distance((nx,ny),zone['center']) < zone['radius']-5:
+                safe = arena.supported(nx,ny,p[2],me.get('stats',{}).get('radius',2.5),me.get('stats',{}).get('height',9)) if hasattr(arena,'supported') else arena.walkable(nx,ny,me.get('stats',{}).get('radius',2.5),me.get('stats',{}).get('height',9))
+                if safe and distance((nx,ny),zone['center']) < zone['radius']-5:
                     move=[sx*.65,sy*.65]
         jet = elevated or (stuck and me['energy']>35)
         return {'move':move,'jump':bool(jet and me['grounded']), 'boost':bool((jet and not me['grounded']) or (urgent and me['energy']>20 and d>20))}
@@ -96,13 +106,11 @@ class Strategy:
         obs=world.obs; me=obs['self']; out={}; offer=obs.get('offer')
         priorities={'nanites':10,'armor':9,'plating':8,'servos':7,'jets':6,'reactor':6,'gun_mag':6,'laser_charge':6,'laser_damage':6,'gun_damage':5,'sensors':5}
         if offer: out['pick']=max(range(len(offer['choices'])),key=lambda i:priorities.get(offer['choices'][i]['id'],3))
-        held=[w['kind'] for w in me['weapons'] if w]
-        rank={'laser':4,'lightning':3,'gun':2,'mortar':1}
         for item in sorted(obs.get('pickups',[]),key=lambda i: distance(me['pos'],i['pos'])):
-            if distance(me['pos'],item['pos']) > self.config.get('loot',{}).get('pickup_radius',4) or abs(me['pos'][2]-item['pos'][2])>4 or item['kind'] in held: continue
-            empty=next((i for i,w in enumerate(me['weapons']) if w is None),None)
-            if empty is not None: out['take']=item['id']; break
-            worst=min(range(len(me['weapons'])),key=lambda i:rank.get(me['weapons'][i]['kind'],0))
-            w=me['weapons'][worst]
-            if rank.get(item['kind'],0)>rank.get(w['kind'],0) and not (w['kind']=='laser' and w.get('charge',0)>0): out.update(take=item['id'],drop=worst); break
+            if distance(me['pos'],item['pos']) > self.config.get('loot',{}).get('pickup_radius',4) or abs(me['pos'][2]-item['pos'][2])>4: continue
+            want, slot = pickup_slot(item,world)
+            if want:
+                out['take']=item['id']
+                if slot is not None: out['drop']=slot
+                break
         return out

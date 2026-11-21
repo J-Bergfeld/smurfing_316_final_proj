@@ -33,7 +33,7 @@ def mortar_pitch(origin, target, speed, gravity):
 class Combat:
     def __init__(self, config): self.config = config
 
-    def estimate(self, me, enemy, count):
+    def estimate(self, me, enemy, count, engaged=False):
         d = distance(me['pos'], enemy['pos']); our = 0
         for w in me.get('weapons',[]):
             if not w: continue
@@ -47,7 +47,7 @@ class Combat:
         weapons = enemy.get('weapons',['gun']); incoming = 65 + (55 if 'laser' in weapons and d < 280 else 0) + (100 if 'lightning' in weapons and d < 50 else 0)
         incoming *= max(1, count*.8)
         bearing = math.atan2(me['pos'][1]-enemy['pos'][1],me['pos'][0]-enemy['pos'][0])
-        if abs(angle_diff(bearing,enemy.get('aim',[bearing])[0])) > math.pi/2:
+        if engaged and abs(angle_diff(bearing,enemy.get('aim',[bearing])[0])) > math.pi/2:
             our *= self.config.get('mech',{}).get('rear_mult',1.5)
         return (our/max(1,enemy.get('hp',1400))) / (incoming/max(1,me['hp']))
 
@@ -85,7 +85,7 @@ class Combat:
             s = w['stats']; kind = w['kind']; cd = w.get('cooldown',0)
             if kind == 'gun':
                 out['fire'][i] = bool(clear and aligned and d <= s.get('range',230) and w.get('ammo',1)>0 and w.get('reload',0)<=0 and not use_mortar)
-                if w.get('reload',0)<=0 and w.get('ammo',1)<s.get('mag',12)*.4 and (not clear or mode in ('flee','hold')): out['reload'] = True
+                if w.get('reload',0)<=0 and w.get('ammo',1)<s.get('mag',12)*.4 and (not clear or mode in ('flee','hold','recover')): out['reload'] = True
             elif kind == 'laser':
                 charge = w.get('charge',0); ready = cd <= 0 and d <= s.get('range',280)
                 # Releasing the trigger fires; release immediately when the target is lost.

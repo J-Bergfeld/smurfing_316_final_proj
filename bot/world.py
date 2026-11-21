@@ -11,10 +11,23 @@ class World:
         self.loot = {}
         self.last_damage = -1000
         self.last_dealt = -1000
+        self.last_damage_bearing = None
+        self.last_damage_by = None
+        self.laser_shot_at = -1000
+        self.laser_shot_pos = None
+        self.laser_charge = {}
         self.obs = None
 
     def update(self, obs):
         self.obs = obs; now = obs['t']; me = obs['self']
+        for slot, weapon in enumerate(me.get('weapons', [])):
+            if not weapon or weapon.get('kind') != 'laser':
+                self.laser_charge.pop(slot, None)
+                continue
+            charge = weapon.get('charge', 0)
+            if self.laser_charge.get(slot, 0) > 0 and charge == 0 and weapon.get('cooldown', 0) > 0:
+                self.laser_shot_at, self.laser_shot_pos = now, me['pos'][:]
+            self.laser_charge[slot] = charge
         for actor in obs.get('mechs', []):
             eye = me['pos'][:2] + [me['pos'][2] + me.get('stats', {}).get('eye_height', 8)]
             center = actor['pos'][:2] + [actor['pos'][2] + (4.5 if actor['kind']=='mech' else 1.75)]
@@ -39,7 +52,9 @@ class World:
         for e in obs.get('events', []):
             if e['type'] == 'damaged':
                 self.last_damage = now
+                self.last_damage_by = e.get('by')
                 if e.get('bearing') is not None:
+                    self.last_damage_bearing = e['bearing']
                     self.sounds.append({'pos':[me['pos'][0]+50*math.cos(e['bearing']),me['pos'][1]+50*math.sin(e['bearing'])], 'time':now, 'kind':'damage'})
             if e['type'] == 'hit': self.last_dealt = now
             if e['type'] == 'took' or (e['type'] == 'take_failed' and e.get('reason') == 'gone'):

@@ -10,6 +10,7 @@ from bot.geometry import Map, angle_diff, distance
 from bot.strategy import Strategy
 from bot.world import World
 from main import Bot
+from bot.tactics import dodge
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 with gzip.open(os.path.join(ROOT, 'check/stream.jsonl.gz'), 'rt') as f:
@@ -78,6 +79,14 @@ class BotTests(unittest.TestCase):
         action=self.strategy.movement(self.world,[0,0,0],False,'attack',self.world.tracks[7])
         self.assertAlmostEqual(action['move'][0],0)
         self.assertGreater(abs(action['move'][1]),0)
+
+    def test_near_enemy_interrupts_even_if_preferred_target_is_far(self):
+        o=observation(); far=enemy(190); far['hp']=1
+        near=enemy(20); near['id']=8; near['hp']=1400
+        o['mechs']=[far,near]; self.world.update(o)
+        mode,target,_=self.strategy.choose(self.world)
+        self.assertEqual(target['actor']['id'],8)
+        self.assertIn(mode,('attack','flee'))
 
     def test_commitment_and_emergency(self):
         o=observation(); self.world.update(o); self.strategy.choose(self.world)
@@ -182,6 +191,79 @@ class BotTests(unittest.TestCase):
         pitch=mortar_pitch(origin,target,speed,gravity)
         t=100/(speed*math.cos(pitch))
         self.assertAlmostEqual(origin[2]+speed*math.sin(pitch)*t-gravity*t*t/2,target[2])
+
+    def test_projectile_dodge_moves_sideways(self):
+        o=observation(); o['projectiles']=[{'id':1,'kind':'gun','pos':[40,0,4.5],'vel':[-100,0,0]}]
+        self.world.update(o); move=dodge(self.world)
+        self.assertIsNotNone(move); self.assertAlmostEqual(move[0],0); self.assertAlmostEqual(abs(move[1]),1)
+
+    def test_laser_dodge_requires_aim_toward_us(self):
+        o=observation(); e=enemy(100); e['charging']=True; o['mechs']=[e]
+        self.world.update(o); self.assertIsNotNone(dodge(self.world))
+        e['aim']=[math.pi/2,0]; self.world.update(o); self.assertIsNone(dodge(self.world))
+
+    def test_dodge_rejects_unsafe_ground(self):
+        class UnsafeMap(OpenMap):
+            def walkable(self,*args): return False
+        o=observation(); o['projectiles']=[{'id':1,'kind':'gun','pos':[40,0,4.5],'vel':[-100,0,0]}]
+        w=World(HELLO['config'],UnsafeMap()); w.update(o)
+        self.assertIsNone(dodge(w))
+
+    def test_recovery_stops_loot_shooting(self):
+        bot=Bot.__new__(Bot); bot.world=self.world; bot.strategy=self.strategy; bot.combat=self.combat
+        o=observation(); o['self']['hp']=900; o['crates']=[{'id':1000,'pos':[15,0,0],'hp':300}]
+        act=bot.act(o)
+        self.assertEqual(self.strategy.mode,'recover'); self.assertEqual(act['fire'],[False,False])
+
+    def test_laser_release_records_reposition_origin(self):
+        o=observation(); o['self']['weapons'][1]={'kind':'laser','charge':.7,'cooldown':0,'stats':HELLO['config']['weapons']['laser']}
+        self.world.update(o); o['t']=.1; o['self']['weapons'][1].update(charge=0,cooldown=1.6)
+        self.world.update(o); self.assertEqual(self.world.laser_shot_pos,[0,0,0])
+
+    def test_contested_drop_is_not_a_loot_goal(self):
+        o=observation(); o['drops']=[{'id':20000,'pos':[30,0,0],'lands_in':0,'radius':8,'capture_s':4,'holder':None}]
+        e=enemy(55); o['mechs']=[e]; self.world.update(o)
+        goal=self.strategy.goal_for(self.world,'loot',self.world.tracks[7],False)
+        self.assertNotEqual(goal,[30,0,0])
+
+    def test_rear_bonus_does_not_start_a_fight(self):
+        o=observation(); e=enemy(100); e['aim']=[0,0]
+        a=self.combat.estimate(o['self'],e,1,engaged=False)
+        b=self.combat.estimate(o['self'],e,1,engaged=True)
+        self.assertGreater(b,a)
+
+    def test_recent_damage_from_another_enemy_does_not_enable_rear_bonus(self):
+        class CombatSpy(Combat):
+            def estimate(self,me,enemy,count,engaged=False):
+                self.engaged=engaged
+                return 1
+        combat=CombatSpy(HELLO['config']); strategy=Strategy(self.map,combat,HELLO['config'])
+        o=observation(); o['mechs']=[enemy(100)]
+        o['events']=[{'type':'damaged','amount':30,'weapon':'gun','bearing':0,'by':8}]
+        self.world.update(o); strategy.choose(self.world)
+        self.assertFalse(combat.engaged)
+
+    def test_laser_release_invalidates_position_cache(self):
+        o=observation(); self.world.update(o)
+        self.strategy.goal_for(self.world,'hold',None,False)
+        self.assertGreater(self.strategy.positioner.goal_until,0)
+        self.world.laser_shot_at=.1; self.world.laser_shot_pos=[0,0,0]; o['t']=.1
+        self.world.update(o); self.strategy.goal_for(self.world,'hold',None,False)
+        self.assertEqual(self.strategy.positioner.last_laser_shot,.1)
+        self.assertGreater(self.strategy.positioner.goal_until,1.5)
+
+    def test_weapon_swap_accounts_for_opponent(self):
+        o=observation(); gun=o['self']['weapons'][0]
+        o['self']['weapons']=[gun,{'kind':'laser','charge':0,'cooldown':0,'stats':HELLO['config']['weapons']['laser']}]
+        o['pickups']=[{'id':8001,'kind':'lightning','pos':[2,0,0]}]
+        self.world.update(o); self.assertNotIn('take',self.strategy.inventory(self.world))
+        o['mechs']=[enemy(60)]; o['mechs'][0]['weapons']=['laser']; self.world.update(o)
+        self.assertEqual(self.strategy.inventory(self.world).get('take'),8001)
+
+    def test_rotation_targets_near_side_of_circle(self):
+        o=observation(); o['self']['pos']=[170,0,0]; o['zone'].update(radius=200,next_radius=100)
+        self.world.update(o); goal=self.strategy.goal_for(self.world,'flee',None,True)
+        self.assertGreater(goal[0],20)
 
 
 if __name__=='__main__': unittest.main()
