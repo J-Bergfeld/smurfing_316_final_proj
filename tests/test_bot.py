@@ -192,6 +192,19 @@ class BotTests(unittest.TestCase):
         self.world.update(o)
         self.assertTrue(self.combat.action(self.world,None,'hold')['reload'])
 
+    def test_reload_waits_for_recent_combat(self):
+        o=observation(); w=o['self']['weapons'][0]
+        w.update(kind='gun',ammo=4,reload=0,stats=dict(HELLO['config']['weapons']['gun'],damage=46.8))
+        e=enemy(60); e['hp']=71.6; o['mechs']=[e]; self.world.update(o)
+        for mode in ('attack','flee','hold','recover'):
+            self.assertFalse(self.combat.action(self.world,self.world.tracks[7],mode).get('reload',False))
+        o['t']=.1; o['mechs']=[]; self.world.update(o)
+        self.assertFalse(self.combat.action(self.world,None,'hold').get('reload',False))
+        w['ammo']=0
+        self.assertTrue(self.combat.action(self.world,None,'hold')['reload'])
+        w['ammo']=4; o['t']=3.2; self.world.update(o)
+        self.assertTrue(self.combat.action(self.world,None,'hold')['reload'])
+
     def test_pickup_and_upgrade(self):
         o=observation(); o['self']['weapons']=[o['self']['weapons'][0],None]; o['pickups']=[{'id':8001,'kind':'laser','pos':[2,0,0]}]
         o['offer']={'choices':[{'id':'gun_velocity'},{'id':'armor'}]}; self.world.update(o)

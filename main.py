@@ -40,6 +40,9 @@ class Bot:
             if farm:
                 target={'actor':min(farm,key=lambda actor:distance(p,actor['pos'])),'visible':True}
         combat = self.combat.action(self.world,target,mode); action.update(combat)
+        if os.getenv('BOT_FIRE_DIAGNOSTICS') == 'on':
+            peek = hasattr(self.strategy, 'positioner') and self.strategy.positioner.last_peek_at == obs['t']
+            action['debug']={'label':'mode=%s gun=%s target=%s peek=%s' % (mode,self.combat.fire_reason,target['actor'].get('id') if target else 'none',int(peek))}
         if 'aim' not in action:
             # Scan toward the most likely threat, otherwise look in the direction of travel.
             if enemy:

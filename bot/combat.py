@@ -1,6 +1,8 @@
 """Target evaluation, aiming and weapon trigger control."""
 import math
+import os
 from .geometry import distance, angle_diff
+from .ranges import incoming_dps
 
 
 def intercept(origin, target, velocity, speed):
@@ -31,7 +33,32 @@ def mortar_pitch(origin, target, speed, gravity):
 
 
 class Combat:
-    def __init__(self, config): self.config = config
+    def __init__(self, config):
+        self.config = config
+        self.reload_policy = os.getenv('BOT_RELOAD_POLICY', 'recent')
+        self.gun_policy = os.getenv('BOT_GUN_POLICY', 'current')
+        self.laser_policy = os.getenv('BOT_LASER_POLICY', 'current')
+        self.range_matchup = os.getenv('BOT_RANGE_MATCHUP', 'on') == 'on'
+        self.fire_reason = None
+
+    def reload_safe(self, world):
+        """Avoid committing to a long reload while a recent fight can resume."""
+        now = world.obs['t']; pos = world.obs['self']['pos']
+        if self.reload_policy == 'cover':
+            threats = [t for t in world.enemies() if now-t['updated'] < 3 and distance(pos,t['actor']['pos']) < 160]
+            if threats:
+                muzzle = [pos[0],pos[1],pos[2]+world.obs['self'].get('stats',{}).get('muzzle_height',7)]
+                for track in threats:
+                    enemy = track['actor']; ep = enemy['pos']
+                    # A nearby enemy can round cover before the reload finishes.
+                    if distance(pos,ep) < 55 or world.arena.clear(muzzle,[ep[0],ep[1],ep[2]+4.5]):
+                        return False
+                return True
+        if now - world.last_damage < 3 or now - world.last_dealt < 3:
+            return False
+        return not any(now - track['updated'] < 3 and
+                       distance(pos, track['actor']['pos']) < 160
+                       for track in world.enemies())
 
     def estimate(self, me, enemy, count, engaged=False):
         d = distance(me['pos'], enemy['pos']); our = 0
@@ -45,6 +72,9 @@ class Combat:
             if kind == 'lightning' and d <= s.get('range',45): our += s.get('damage',60)/max(.1,s.get('cooldown',.25))*.8
             if kind == 'mortar' and 20 < d < 200: our += s.get('damage',200)/max(.1,s.get('cooldown',2.6))*.5
         weapons = enemy.get('weapons',['gun']); incoming = 65 + (55 if 'laser' in weapons and d < 280 else 0) + (100 if 'lightning' in weapons and d < 50 else 0)
+        if self.range_matchup:
+            # Keep a floor for uncertainty and unobserved upgrades/opponents.
+            incoming = max(15,incoming_dps(enemy,d,self.config))
         incoming *= max(1, count*.8)
         bearing = math.atan2(me['pos'][1]-enemy['pos'][1],me['pos'][0]-enemy['pos'][0])
         if engaged and abs(angle_diff(bearing,enemy.get('aim',[bearing])[0])) > math.pi/2:
@@ -52,10 +82,10 @@ class Combat:
         return (our/max(1,enemy.get('hp',1400))) / (incoming/max(1,me['hp']))
 
     def action(self, world, target, mode):
-        obs = world.obs; me = obs['self']; out = {'fire':[False,False]}
+        obs = world.obs; me = obs['self']; out = {'fire':[False,False]}; self.fire_reason = 'no_target'
         if not target:
             for w in me.get('weapons', []):
-                if w and w['kind']=='gun' and w.get('reload',0)<=0 and w.get('ammo',0)<w.get('stats',{}).get('mag',12): out['reload']=True
+                if w and w['kind']=='gun' and w.get('reload',0)<=0 and (w.get('ammo',0)==0 or (w.get('ammo',0)<w.get('stats',{}).get('mag',12) and (self.reload_policy == 'legacy' or self.reload_safe(world)))): out['reload']=True
             # A charged laser cannot be cancelled. Point away from the arena
             # before releasing it, while respecting the weapon's hold limit.
             for i,w in enumerate(me.get('weapons',[])[:2]):
@@ -78,7 +108,7 @@ class Combat:
         laser = next((w for w in weapons if w and w['kind']=='laser' and w.get('charge',0)>0),None)
         # During early charge, a gun can lead while the torso has enough time
         # to return to the laser solution before the beam is ready.
-        if laser and gun:
+        if laser and gun and self.laser_policy != 'legacy':
             beam_aim=aim_at(origin,dest)
             gun_dest=intercept(origin,dest,actor.get('vel',[0,0,0]),gun['stats'].get('speed',252))
             gun_aim=aim_at(origin,gun_dest)
@@ -107,7 +137,25 @@ class Combat:
                 gun_aim=aim_at(origin,gun_dest)
                 gun_aligned=abs(angle_diff(gun_aim[0],me['aim'][0])) < max(.018,math.atan2(1.5 if airborne else 2.0,max(1,d))) and abs(gun_aim[1]-me['aim'][1]) < max(.025,math.atan2(2.0 if airborne else 3.0,max(1,d)))
                 out['fire'][i] = bool(clear and gun_aligned and d <= s.get('range',230) and w.get('ammo',1)>0 and w.get('reload',0)<=0 and not use_mortar and world.arena.clear(origin,gun_dest))
-                if w.get('reload',0)<=0 and w.get('ammo',1)<s.get('mag',12)*.4 and (not clear or mode in ('flee','hold','recover')): out['reload'] = True
+                if self.gun_policy == 'no_lead_check':
+                    out['fire'][i] = bool(clear and gun_aligned and d <= s.get('range',230) and w.get('ammo',1)>0 and w.get('reload',0)<=0 and not use_mortar)
+                if self.gun_policy == 'legacy':
+                    out['fire'][i] = bool(clear and aligned and d <= s.get('range',230) and w.get('ammo',1)>0 and w.get('reload',0)<=0 and not use_mortar)
+                if not target.get('visible',False): self.fire_reason = 'not_visible'
+                elif not clear: self.fire_reason = 'blocked'
+                elif w.get('reload',0)>0: self.fire_reason = 'reloading'
+                elif w.get('ammo',1)<=0: self.fire_reason = 'empty'
+                elif d > s.get('range',230): self.fire_reason = 'range'
+                elif use_mortar: self.fire_reason = 'mortar_aim'
+                elif abs(angle_diff(gun_aim[0],me['aim'][0])) >= max(.018,math.atan2(1.5 if airborne else 2.0,max(1,d))): self.fire_reason = 'yaw'
+                elif not gun_aligned: self.fire_reason = 'pitch'
+                elif not out['fire'][i]: self.fire_reason = 'lead_blocked'
+                elif cd>0: self.fire_reason = 'cooldown'
+                else: self.fire_reason = 'firing'
+                ammo=w.get('ammo',1)
+                if self.reload_policy == 'legacy':
+                    if w.get('reload',0)<=0 and ammo<s.get('mag',12)*.4 and (not clear or mode in ('flee','hold','recover')): out['reload']=True
+                elif w.get('reload',0)<=0 and (ammo == 0 or (ammo < s.get('mag',12)*.4 and not out['fire'][i] and self.reload_safe(world))): out['reload'] = True
             elif kind == 'laser':
                 charge = w.get('charge',0); ready = cd <= 0 and d <= s.get('range',280)
                 # Releasing the trigger fires; release immediately when the target is lost.
@@ -115,6 +163,8 @@ class Combat:
                 beam_aligned=abs(angle_diff(beam_aim[0],me['aim'][0])) < max(.018,math.atan2(2.0,max(1,d))) and abs(beam_aim[1]-me['aim'][1]) < max(.025,math.atan2(3.0,max(1,d)))
                 acquire=abs(angle_diff(beam_aim[0],me['aim'][0])) < .35 and abs(beam_aim[1]-me['aim'][1]) < .25
                 out['fire'][i] = bool(clear and ready and not use_mortar and ((charge == 0 and acquire) or (charge > 0 and (charge < s.get('charge',.75) or not beam_aligned))))
+                if self.laser_policy == 'legacy':
+                    out['fire'][i] = bool(clear and ready and not use_mortar and (charge < s.get('charge',.75) or not aligned))
             elif kind == 'lightning':
                 direction=math.atan2(pos[1]-origin[1],pos[0]-origin[0])
                 out['fire'][i] = bool(clear and abs(angle_diff(direction,me['aim'][0])) < math.radians(s.get('cone_deg',30)/2)*.8 and d <= s.get('range',45) and me['energy'] >= s.get('energy',3))

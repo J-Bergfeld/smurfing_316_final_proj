@@ -5,6 +5,7 @@ from .geometry import distance, angle_diff
 from .positioning import Positioner
 from .loadout import pickup_slot
 from .movement import MovementSupport
+from .ranges import engagement_range, unsafe_to_close
 
 
 class Strategy:
@@ -23,6 +24,10 @@ class Strategy:
         self.retreat_until = 0
         self.strafe_style = os.getenv('BOT_STRAFE', 'legacy')
         self.hunter_model = os.getenv('BOT_HUNTERS', 'off') != 'off'
+        self.combat_boost = os.getenv('BOT_COMBAT_BOOST', 'off') == 'on'
+        self.range_engagement = os.getenv('BOT_RANGE_ENGAGEMENT', 'off') == 'on'
+        self.range_matchup = os.getenv('BOT_RANGE_MATCHUP', 'on') == 'on'
+        if self.range_matchup: self.positioner.range_position = True
 
     def choose(self, world):
         obs = world.obs; me = obs['self']; now = obs['t']; enemies = world.enemies()
@@ -57,7 +62,8 @@ class Strategy:
         self.zone_urgent = urgency
         # Target preference may favor a weak enemy farther away; do not let it
         # hide a different opponent who is an immediate danger.
-        visible_threat = any(e['visible'] and distance(me['pos'],e['actor']['pos']) < 160 for e in enemies)
+        react_range = engagement_range(me,self.config) if self.range_engagement else 160
+        visible_threat = any(e['visible'] and distance(me['pos'],e['actor']['pos']) < react_range for e in enemies)
         nearby_count = sum(distance(me['pos'],e['actor']['pos'])<220 and e['confidence']>.3 and (not self.hunter_model or world.field == 'ffa' or is_hunter(e)) for e in enemies)
         engaged = bool(closest and ((self.mode=='attack' and previous_target==closest['actor']['id']) or (recent and world.last_damage_by==closest['actor']['id'])))
         ratio = self.combat.estimate(me,closest['actor'],nearby_count,engaged=engaged) if closest else 0
@@ -85,6 +91,10 @@ class Strategy:
         elif me['hp'] < me['max_hp']*.9 and me.get('in_zone',True) and not projectile_threat: proposed = 'recover'
         elif world.loot or obs.get('drops') or any(t['visible'] and t['actor']['kind']=='npc' and distance(me['pos'],t['actor']['pos'])<110 for t in world.tracks.values()): proposed = 'loot'
         else: proposed = 'hold'
+        if self.range_matchup and proposed == 'attack' and closest and closest['visible']:
+            ep=closest['actor']['pos']; muzzle=me.get('stats',{}).get('muzzle_height',7)
+            clear=self.arena.clear([me['pos'][0],me['pos'][1],me['pos'][2]+muzzle],[ep[0],ep[1],ep[2]+4.5])
+            if unsafe_to_close(me,closest['actor'],self.config,clear): proposed='flee'
         if projectile_threat and proposed != 'attack': proposed = 'flee'
         emergency = urgency or recent or projectile_threat or losing or bool(visible_threat and self.mode not in ('attack','flee')) or third_party
         if proposed != self.mode and (first_decision or now >= self.until or emergency):
@@ -155,6 +165,13 @@ class Strategy:
             if not jump:
                 descending = urgent and goal[2] < p[2]-3
                 move=self.motion.steer(arena,me,move,obs['zone'],allow_drop=descending)
+            # Short bursts leave energy for escape and roof transitions. Laser
+            # charging halves movement speed, so save energy during the charge.
+            charging=any(w and w['kind']=='laser' and w.get('charge',0)>0 for w in me.get('weapons',[]))
+            if (self.combat_boost and mode=='attack' and enemy and enemy['visible']
+                    and me['energy']>75 and not charging and math.hypot(*move)>.5
+                    and distance(p,enemy['actor']['pos'])<140 and now % 3 < .6):
+                boost=True
         self.motion.record(move)
         return {'move':move,'jump':jump,'boost':boost}
 

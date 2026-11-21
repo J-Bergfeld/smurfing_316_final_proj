@@ -1,7 +1,9 @@
 """Replaceable tactical position scoring over ground and roof candidates."""
 import math
+import os
 from .geometry import distance
 from .loadout import pickup_slot
+from .ranges import desired_distance
 
 
 class Positioner:
@@ -16,6 +18,9 @@ class Positioner:
         self.objective = None
         self.objective_since = 0
         self.ignored = {}
+        self.laser_peek = os.getenv('BOT_LASER_PEEK', 'off') == 'on'
+        self.range_position = os.getenv('BOT_RANGE_POSITION', 'off') == 'on'
+        self.last_peek_at = -1000
 
     def goal_for(self, world, mode, enemy, urgent):
         obs = world.obs; me = obs['self']; now = obs['t']; p = me['pos']; z = obs['zone']; arena = self.arena
@@ -30,6 +35,32 @@ class Positioner:
             self.goal_until = 0
             self.last_laser_shot = world.laser_shot_at
         self.reloading = reloading
+        # Reacquire a recently seen target from the nearest clear position once
+        # the laser is ready. The normal post-shot cover scoring handles retreat.
+        lasers = [w for w in me['weapons'] if w and w['kind']=='laser']
+        if (self.laser_peek and not urgent and mode == 'attack' and enemy and lasers
+                and now-world.laser_shot_at < 5 and now-enemy['updated'] < 2
+                and lasers[0].get('cooldown',0) <= .3 and me.get('grounded',True)):
+            ep=enemy['actor']['pos']; target=[ep[0],ep[1],ep[2]+4.5]
+            muzzle=me.get('stats',{}).get('muzzle_height',7)
+            if not arena.clear([p[0],p[1],p[2]+muzzle],target):
+                radius=me.get('stats',{}).get('radius',2.5); height=me.get('stats',{}).get('height',9)
+                for step in (6,12,18):
+                    options=[]
+                    for i in range(16):
+                        a=i*math.pi/8; dx,dy=math.cos(a),math.sin(a)
+                        x,y=p[0]+dx*step,p[1]+dy*step
+                        if distance((x,y),z['center']) > z['radius']-5: continue
+                        def supported(t):
+                            sx,sy=p[0]+dx*step*t,p[1]+dy*step*t
+                            return arena.supported(sx,sy,p[2],radius,height) if hasattr(arena,'supported') else arena.walkable(sx,sy,radius,height)
+                        if not all(supported(t) for t in (.25,.5,.75,1)): continue
+                        q=[x,y,p[2]]
+                        if arena.clear([x,y,p[2]+muzzle],target): options.append(q)
+                    if options:
+                        self.last_peek_at = now
+                        self.goal=min(options,key=world.threat); self.goal_until=now+.25
+                        return self.goal
         if now < self.goal_until and self.goal is not None: return self.goal
         candidates = [(p[:],0)]
         for radius in (25,55,100):
@@ -84,6 +115,7 @@ class Positioner:
         hostile_weapons=enemy['actor'].get('weapons',[]) if enemy else []
         desired = 35 if 'lightning' in held and 'laser' not in held else 120
         if 'lightning' in hostile_weapons and ('gun' in held or 'laser' in held): desired=max(desired,75)
+        if self.range_position: desired = desired_distance(me,enemy['actor'] if enemy else None,world.config)
         shot_recent = world.laser_shot_pos is not None and now-world.laser_shot_at < 1.65
         def score(item):
             pos, reward = item; travel = distance(p,pos); outside = max(0,distance(pos,z['next_center'])-max(0,z['next_radius']-18))
