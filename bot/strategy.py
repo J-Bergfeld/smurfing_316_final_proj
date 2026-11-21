@@ -1,5 +1,6 @@
 """Mode selection, positioning and inventory decisions."""
 import math
+import os
 from .geometry import distance, angle_diff
 from .positioning import Positioner
 from .loadout import pickup_slot
@@ -20,15 +21,23 @@ class Strategy:
         self.strafe_sign = 1
         self.strafe_until = 0
         self.retreat_until = 0
+        self.strafe_style = os.getenv('BOT_STRAFE', 'legacy')
+        self.hunter_model = os.getenv('BOT_HUNTERS', 'off') != 'off'
 
     def choose(self, world):
         obs = world.obs; me = obs['self']; now = obs['t']; enemies = world.enemies()
         first_decision = self.until is None
         if first_decision: self.until = now + 2.5
+        def is_hunter(track):
+            actor=track['actor']; p=me['pos']; pos=actor['pos']
+            bearing=math.atan2(p[1]-pos[1],p[0]-pos[0])
+            facing=abs(angle_diff(actor.get('aim',[bearing])[0],bearing)) < .25
+            return now-world.attackers.get(actor['id'],-1000) < 6 or (track['visible'] and facing and distance(p,pos)<160)
         def target_cost(track):
             actor = track['actor']
             return (distance(me['pos'],actor['pos'])*.5 + actor.get('hp',1400)*.09
-                    + (0 if track['visible'] else 60) - (15 if actor['id']==self.target_id else 0))
+                    + (0 if track['visible'] else 60) - (15 if actor['id']==self.target_id else 0)
+                    - (35 if self.hunter_model and world.field != 'ffa' and is_hunter(track) else 0))
         previous_target = self.target_id
         closest = min(enemies,key=target_cost,default=None)
         close_visible = [e for e in enemies if e['visible'] and distance(me['pos'],e['actor']['pos']) < 45]
@@ -49,7 +58,7 @@ class Strategy:
         # Target preference may favor a weak enemy farther away; do not let it
         # hide a different opponent who is an immediate danger.
         visible_threat = any(e['visible'] and distance(me['pos'],e['actor']['pos']) < 160 for e in enemies)
-        nearby_count = sum(distance(me['pos'],e['actor']['pos'])<220 and e['confidence']>.3 for e in enemies)
+        nearby_count = sum(distance(me['pos'],e['actor']['pos'])<220 and e['confidence']>.3 and (not self.hunter_model or world.field == 'ffa' or is_hunter(e)) for e in enemies)
         engaged = bool(closest and ((self.mode=='attack' and previous_target==closest['actor']['id']) or (recent and world.last_damage_by==closest['actor']['id'])))
         ratio = self.combat.estimate(me,closest['actor'],nearby_count,engaged=engaged) if closest else 0
         nearby = [e['actor'] for e in enemies if e['visible'] and distance(me['pos'],e['actor']['pos']) < 180]
@@ -61,7 +70,7 @@ class Strategy:
         third_party = ffa and (fighting or (self.mode == 'attack' and len(nearby)>=2))
         hp = me['hp']/max(1,me['max_hp'])
         incoming = sum(amount for _,amount in world.damage_log)/2.5
-        close_count = sum(distance(me['pos'],e['pos']) < 160 for e in nearby)
+        close_count = sum(distance(me['pos'],e['pos']) < 160 and (not self.hunter_model or ffa or is_hunter(world.tracks[e['id']])) for e in nearby)
         finish = bool(closest and closest['visible'] and d < 120 and closest['actor']['hp'] < .3*closest['actor'].get('max_hp',1400) and hp > .3 and close_count <= 2)
         losing = (close_count >= 3 and hp < .8) or (close_count >= 2 and hp < .55) or (hp < .35 and recent) or incoming > 110
         if losing and not finish: self.retreat_until = now + 1.5
@@ -118,12 +127,13 @@ class Strategy:
         move=[dx/d,dy/d] if d>2 else [0,0]
         guns=[w for w in me.get('weapons',[]) if w and w['kind']=='gun']
         reloading=any(w.get('reload',0)>0 or w.get('ammo',1)<=w.get('stats',{}).get('mag',12)*.25 for w in guns)
-        if mode == 'attack' and enemy and enemy['visible'] and me['grounded'] and not reloading and now-world.laser_shot_at>1.65:
+        if mode == 'attack' and enemy and enemy['visible'] and me['grounded'] and self.strafe_style != 'off' and (self.strafe_style != 'legacy' or (not reloading and now-world.laser_shot_at>1.65)):
             target=enemy['actor']['pos']; ex,ey=target[0]-p[0],target[1]-p[1]; ed=math.hypot(ex,ey)
             if ed>1:
                 if now>=self.strafe_until:
                     self.strafe_sign *= -1
-                    self.strafe_until=now+1.2+((obs['tick']*7919+me['id'])%13)/10
+                    interval = 3.0 if self.strafe_style == 'steady' else 1.2
+                    self.strafe_until=now+interval+((obs['tick']*7919+me['id'])%13)/10
                 sx,sy=-ey/ed*self.strafe_sign,ex/ed*self.strafe_sign
                 weight=1 if distance(p,goal)<8 else .4
                 mx,my=move[0]+sx*weight,move[1]+sy*weight; length=math.hypot(mx,my)
@@ -143,7 +153,8 @@ class Strategy:
             threatened = world.obs['t']-world.last_damage<3 or bool(enemy and enemy['visible'] and distance(p,enemy['actor']['pos'])<140)
             boost=bool(d>12 and ((urgent and me['energy']>20) or (mode=='flee' and threatened and me['energy']>45)))
             if not jump:
-                move=self.motion.steer(arena,me,move,obs['zone'])
+                descending = urgent and goal[2] < p[2]-3
+                move=self.motion.steer(arena,me,move,obs['zone'],allow_drop=descending)
         self.motion.record(move)
         return {'move':move,'jump':jump,'boost':boost}
 

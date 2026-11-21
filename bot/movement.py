@@ -51,13 +51,20 @@ class MovementSupport:
         return {'move':rec['forward'][:], 'jump':jump,
                 'boost':bool(not me['grounded'] and me['energy']>8 and me['pos'][2]<rec['z']+7)}
 
-    def steer(self, arena, me, move, zone):
+    def steer(self, arena, me, move, zone, allow_drop=False):
         mag=math.hypot(*move)
         if mag<.01 or not me['grounded']: return move
         p=me['pos']; stats=me.get('stats',{}); radius=stats.get('radius',2.5); height=stats.get('height',9)
         def safe(x,y):
             if distance((x,y),zone['center'])>max(zone['radius']-2,distance(p,zone['center'])): return False
-            return arena.supported(x,y,p[2],radius,height) if hasattr(arena,'supported') else arena.walkable(x,y,radius,height)
+            supported = arena.supported(x,y,p[2],radius,height) if hasattr(arena,'supported') else arena.walkable(x,y,radius,height)
+            if supported: return True
+            # Dropping from a roof is intentional when a route descends.
+            # Check the body at its current altitude; the engine then handles
+            # the fall, rather than requiring roof support beyond the edge.
+            if allow_drop and hasattr(arena,'blocked') and hasattr(arena,'height') and arena.height(x,y) < p[2]-2:
+                return not any(arena.blocked(x+dx,y+dy,p[2]+.1,height) for dx,dy in ((0,0),(radius,0),(-radius,0),(0,radius),(0,-radius)))
+            return False
         # If the current footing is off our coarse model, leave the direction
         # intact so that recovery/jet movement can get back onto the graph.
         if not safe(p[0],p[1]): return move

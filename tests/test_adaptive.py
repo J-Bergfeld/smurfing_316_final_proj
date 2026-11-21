@@ -5,6 +5,7 @@ from test_bot import HELLO, OpenMap, enemy, observation
 from bot.combat import Combat
 from bot.strategy import Strategy
 from bot.world import World
+from bot.movement import MovementSupport
 
 
 class AdaptiveTests(unittest.TestCase):
@@ -66,3 +67,15 @@ class AdaptiveTests(unittest.TestCase):
         self.world.update(obs)
         action = Combat(HELLO['config']).action(self.world, self.world.tracks[7], 'attack')
         self.assertFalse(action['fire'][0])
+
+    def test_roof_edge_can_be_crossed_for_descent(self):
+        class Roof(OpenMap):
+            def supported(self, x, y, z, radius, height):
+                return x < 2
+            def blocked(self, x, y, z, height=0):
+                return False
+        obs = observation()
+        obs['self']['pos'][2] = 20
+        motion = MovementSupport()
+        move = motion.steer(Roof(), obs['self'], [1, 0], obs['zone'], allow_drop=True)
+        self.assertGreater(move[0], .9)

@@ -3,6 +3,7 @@ import argparse
 from contextlib import ExitStack
 import gzip
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -15,6 +16,8 @@ def main():
     parser.add_argument("--sim", type=Path, required=True)
     parser.add_argument("--kit", type=Path, required=True)
     parser.add_argument("--bot", type=Path, default=Path("example_bot.py"))
+    parser.add_argument("--bot-env", action="append", default=[], metavar="NAME=VALUE",
+                        help="Set an environment variable for the subject bot only; repeat for multiple factors.")
     parser.add_argument("--seed", type=int, default=420000)
     parser.add_argument("--trace", type=Path, help="Write subject observations and actions to JSONL.")
     parser.add_argument("--opponent", action="append", type=Path, default=[],
@@ -23,6 +26,8 @@ def main():
     parser.add_argument("--opponent-image", action="append", default=[],
                         help="Locally built mechfight Docker image, for any language.")
     args = parser.parse_args()
+    if any(not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*=.*', value) for value in args.bot_env):
+        parser.error('--bot-env must be NAME=VALUE')
     if len(args.opponent) + len(args.opponent_image) > 15:
         parser.error("The arena has 15 opponent slots.")
     sim, kit, bot = (p.resolve(strict=True) for p in (args.sim, args.kit, args.bot))
@@ -50,7 +55,7 @@ def main():
                         "-lm", "-o", str(lib)], check=True)
         arena = Map(kit / "arena", hello["config"], lib)
         roles = ["hunter", "looter", "edge", "camper"] * 3 + ["hunter", "looter", "edge"]
-        entrants = [(str(bot), [sys.executable, "-u", str(bot)], False)]
+        entrants = [(str(bot), ['env', *args.bot_env, sys.executable, "-u", str(bot)], False)]
         for entry in args.opponent:
             path = entry.resolve(strict=True)
             interpreter = str(args.opponent_python.resolve(strict=True)) if args.opponent_python else sys.executable
