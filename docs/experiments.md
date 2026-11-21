@@ -4,6 +4,56 @@ Practice scores are mean placement points. A simulated delta is a hypothesis, no
 Use the same seeds and simulator revision for each factor combination. Record the commit and environment
 values; if the tree is dirty, preserve the diff and bot hash with the results.
 
+## Operating loop
+
+The team reports the limit is now six official submissions per hour (the published guide may lag).
+Aim for one every ten minutes when a candidate is ready; verify the platform's actual limit and cutoff.
+Keep the best official practice entry, current working champion, and best FFA candidate separately.
+An official result is the authority for practice; neither local suite establishes final performance.
+
+1. Start with a concrete failure or opportunity from traces, official feedback, or protocol mechanics.
+   Describe a broad tactical alternative, why it should change placement, and where it could fail.
+2. Have a second reasoning pass challenge the assumptions, identify simulator-dependent claims and
+   propose a discriminating scenario. Check claims against protocol and traces; plausible reasoning is
+   not evidence. Prioritize by expected placement impact, frequency, transferability, cost and uncertainty.
+3. Test the mechanism in a small reproducible scenario, then screen the candidate against its parent
+   using paired squad-proxy and FFA seeds. Start with 16–32 pairs where feasible; expand close or
+   consequential comparisons. Review late/invalid actions and traces as well as mean placement.
+4. Run protocol, relevant scenario/unit, and restricted-container checks before official submission.
+   Record the exact submitted commit, factors, timestamp, score and comparison. Local tests are a
+   gate for obvious failures, not proof of official improvement; investigate contradictions.
+5. Update both scoreboards and select the next hypothesis while the official run scores. Retain raw
+   outcomes and rejected ideas. Revisit movement, combat and economy as interactions become apparent.
+
+Use 2×2 factorials for two plausible interacting philosophies: baseline, A only, B only and A+B,
+on matching seeds. Define the expected interaction and decision before looking at results. Local
+interaction is exploratory, particularly with small samples; use official slots on informative cells
+when their value justifies the cost, and avoid assuming a local interaction transfers. Repeat a control
+against itself to understand timing noise. Rotate validation seeds and lineups to limit local overfit.
+The runner currently executes one variant's seeds before the next; account for order and machine-load
+effects when interpreting comparisons. Do not assume identical seeds make divergent matches identical.
+
+### Hypothesis card
+
+Copy for each candidate or factorial and link to its results:
+
+```text
+ID / parent / exact commit and factors:
+Observation and evidence (trace, protocol, or official result):
+Hypothesis and mechanism; expected affected situations and placement outcome:
+Counter-hypothesis / failure mode / simulator assumptions:
+Minimal discriminating scenario and expected observable behavior:
+Local squad and FFA comparisons: simulator, lineup, seeds, paired delta, uncertainty, failures, raw file:
+2×2 interaction and decision rule, if applicable:
+Official submission time / score / comparator / result:
+Decision: promote, reject, investigate, or retest; next question:
+```
+
+## Official practice and candidate history
+
+The historic table combines official outcomes and local screening. Preserve uncertain commit associations;
+new records should identify the comparison and link the separate suite results below.
+
 | Version / commit | Change and reason | Simulated Δ | Official score / Δ | Status |
 | --- | --- | --- | --- | --- |
 | `2646e82` | 11:21 p.m. Nov 20 bot: tactics, repositioning and roofs | — | 2.92 / — | Best reported; commit inferred from timestamp |
@@ -35,7 +85,7 @@ the legacy policy in this example. Use a clean committed checkout
 for official comparisons. `--opponent` enables FFA; without opponents the runner uses the squad proxy.
 These tests are not a substitute for the official engine.
 
-## Calibration
+## Squad-proxy calibration against official practice
 
 | Bot / version | Simulator and seeds | Sim mean | Official mean | Difference |
 | --- | --- | --- | --- | --- |
@@ -51,3 +101,25 @@ Paired squad-proxy comparison, seeds 420000–420015: `2646e82` **3.19**, `9a737
 new minus old **−0.13 ± 0.30 SE** (4 wins, 3 losses, 9 ties). Neither the direction nor a cause is established.
 The most recent 16-seed run scored **10, 2, 8, 10, 2, 5, 4, 2, 3, 1, 1, 6, 3, 4, 6, 10**;
 its +0.50 ± 0.89 SE change does not establish an improvement. Raw local results remain under `mech-testing/`.
+
+For future calibration, add the local and official **candidate-minus-parent** deltas, their identities,
+simulator revision, seeds, match counts and raw results. Compare the sign across several distinct
+changes as well as absolute scores. Official fixed seeds and local proxy seeds differ, and aggregate
+official scores alone do not provide paired per-match uncertainty. Do not derive a correction factor
+from the current rows.
+
+| Candidate / parent | Local squad delta (pairs, SE, seeds, simulator) | Official delta (scores, run IDs) | Direction agrees? / caveats |
+| --- | --- | --- | --- |
+| None recorded yet | — | — | Historical results above are not a validated calibration series |
+
+## Local FFA performance
+
+Track every tested candidate here independently of its practice score. Use the same pinned opponent
+lineup, simulator revision and paired seeds within each comparison; record the lineup composition,
+spawn variation if available, runtime and raw results. Compare candidates across several lineups and
+held-out seeds before identifying a preferred final candidate. An FFA proxy is not the official final.
+Leave results unknown until measured; do not compare means across different suites as a ranking.
+
+| Candidate / parent | Lineup and simulator revision | Seeds / matches | Mean placement points; paired delta ± SE | Survival / kills; late / invalid | Raw result / decision |
+| --- | --- | --- | --- | --- | --- |
+| No comparable FFA results recorded yet | — | — | — | — | — |

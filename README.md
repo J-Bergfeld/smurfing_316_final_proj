@@ -103,5 +103,6 @@ jet-ascent, and drop edges; it is not a complete collision-exact navigation
 mesh. The bot does not model
 foliage occlusion or reproduce full projectile and flight physics. Test
 and tune against official practice scores before relying on a policy. Record
-commit, profile, changed feature, submission time, and score for each run; the
-rules allow four submissions per hour and rank the best practice result.
+commit, profile, changed feature, submission time, and score for each run. The
+team reports an updated limit of six submissions per hour; confirm the current
+limit on the submission platform. The leaderboard ranks the best practice result.
