@@ -33,10 +33,28 @@ def provenance(bot):
     dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True))
     digest = hashlib.sha256()
     files = [bot] + sorted((bot.parent/'bot').glob('*.py')) if (bot.parent/'bot').is_dir() else [bot]
+    if (bot.parent/'mechfight.py').is_file(): files.append(bot.parent/'mechfight.py')
     for path in files:
         digest.update(str(path.relative_to(bot.parent)).encode()+b'\0'+path.read_bytes())
     return {'commit': commit, 'dirty': dirty, 'diff_sha256': hashlib.sha256(diff).hexdigest() if diff else None,
             'bot_sha256': digest.hexdigest()}
+
+
+def verify_revision(bot, revision):
+    """Confirm the external checkout's Python runtime matches a local commit."""
+    commit = subprocess.check_output(['git', 'rev-parse', '--verify', revision+'^{commit}'], cwd=ROOT, text=True).strip()
+    tracked = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', commit, '--', 'main.py', 'mechfight.py', 'bot/'], cwd=ROOT, text=True).splitlines()
+    files = [name for name in tracked if name.endswith('.py')]
+    if bot.name != 'main.py' or 'main.py' not in files:
+        raise ValueError('revision verification requires the root main.py')
+    actual = {'main.py', *(str(p.relative_to(bot.parent)) for p in (bot.parent/'bot').glob('*.py'))}
+    if (bot.parent/'mechfight.py').is_file(): actual.add('mechfight.py')
+    if actual != set(files): raise ValueError('bot runtime files do not match the revision')
+    for name in files:
+        expected = subprocess.check_output(['git', 'show', commit+':'+name], cwd=ROOT)
+        if (bot.parent/name).read_bytes() != expected:
+            raise ValueError('bot file differs from revision: '+name)
+    return commit
 
 
 def summarize(rows):
@@ -77,6 +95,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--sim', type=Path, required=True, help='Checkout containing local_sim')
     parser.add_argument('--bot', type=Path, default=ROOT/'main.py')
+    parser.add_argument('--bot-revision', help='Verify the bot runtime matches this local Git revision')
     parser.add_argument('--factor', action='append', default=[], metavar='NAME=A,B')
     parser.add_argument('--seed-start', type=int, default=420000)
     parser.add_argument('--seeds', type=int, default=8, help='Number of paired seeds')
@@ -91,6 +110,9 @@ def main():
     bot = args.bot.resolve(strict=True)
     if not (sim/'local_sim/game.py').is_file(): parser.error('--sim must contain local_sim/game.py')
     source = provenance(bot)
+    if args.bot_revision:
+        try: source['bot_revision'] = verify_revision(bot, args.bot_revision)
+        except (ValueError, subprocess.CalledProcessError) as exc: parser.error(str(exc))
     try:
         sim_commit = subprocess.check_output(['git', '-C', str(sim), 'rev-parse', 'HEAD'], text=True, stderr=subprocess.DEVNULL).strip()
         sim_dirty = bool(subprocess.check_output(['git', '-C', str(sim), 'status', '--porcelain'], text=True))

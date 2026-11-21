@@ -6,6 +6,7 @@ Record the commit and environment values; if the tree is dirty, preserve the dif
 
 | Version / commit | Change and reason | Simulated Δ | Official score / Δ | Status |
 | --- | --- | --- | --- | --- |
+| `2646e82` | 11:21 p.m. Nov 20 bot: tactics, repositioning and roofs | — | 2.92 / — | Best reported; commit inferred from timestamp |
 | `a528856` | Previous bot | — | 2.56 / — | Baseline reported by user; commit association unverified |
 | `9a73729` | Adaptive combat and farming | — | 2.71 / +0.15 | Baseline reported by user |
 | pending | Urgent roof descent: escape instead of stalling at an edge | +1 on one squad-proxy seed; 3 other seeds tied | Not submitted | Keep testing |
@@ -28,6 +29,12 @@ controller processes and are not a substitute for the official engine.
 
 | Bot / version | Simulator and seeds | Sim mean | Official mean | Difference |
 | --- | --- | --- | --- | --- |
+| `2646e82` | squad proxy `e322ffe`, 420000–420015 (16 matches) | 3.19 (SE 0.60) | 2.92 | +0.27; different seeds and opponents |
+| `2646e82` | second proxy `c1cc0d2`, 0–3 (4 matches) | 2.75 | 2.92 | −0.17; different seeds and opponents |
 | 2.71 baseline | squad proxy, 420000–420003 | 2.0 | 2.71 | −0.71; only four matches, diagnostic only |
 
-Do not infer a correction factor from this row. Add matched versions and larger samples before interpreting simulator accuracy.
+The first proxy's 16-match scores range from 0 to 6; its approximate 95% interval for the mean is 1.91–4.47.
+The official 2.92 covers 48 matches on private seeds. These estimates cannot establish predictive accuracy or a
+correction factor; compare more versions and repeat official results. Raw local results are in
+`mech-testing/calibration-2646e82-420000.json`, `mech-testing/calibration-2646e82-420008.json`, and
+`mech-testing/calibration-2646e82-second.jsonl` (ignored local files).
