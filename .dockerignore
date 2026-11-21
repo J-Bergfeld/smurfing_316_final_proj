@@ -1,0 +1,6 @@
+.git
+arena
+check
+tests
+__pycache__
+*.pyc
