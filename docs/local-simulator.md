@@ -45,3 +45,13 @@ done
 The match runs your bot and scripted opponents in a simulated free-for-all. Output includes your placement, points (16 minus place), credited kills, elapsed game time, and late and invalid responses. Opponent stats are recorded when your placement is settled. For a fair comparison, use the same seeds, lineup, and simulator revision. These scores describe local free-for-alls. The official practice field is a cooperating house squad.
 
 The previous five-seed reference used a different, three-competitor lineup, so its scores are not directly comparable. To run a custom lineup, see `python3 tools/run_local_match.py --help`.
+
+## Trace a saved lineup
+
+From the project root in Ubuntu, run:
+
+    python3 tools/replay_match.py ~/mech-testing/expanded-420002.json
+
+Use a result JSON generated on your machine, with its opponent folders and
+Docker images available. The helper prints a new directory containing
+trace.jsonl (per-tick observations and actions) and result.json (match outcome).
