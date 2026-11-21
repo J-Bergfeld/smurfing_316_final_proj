@@ -39,6 +39,7 @@ def main():
     parser.add_argument("--opponents-dir", type=Path,
                         help="Use the already unpacked mech-competitor-review folders.")
     parser.add_argument("--fetch-only", action="store_true", help="Download the pinned opponents without running a match.")
+    parser.add_argument("--trace", type=Path, help="Write subject observations and actions to a JSONL file.")
     args = parser.parse_args()
     folders = []
     for repo, revision in REPOS.items():
@@ -55,6 +56,8 @@ def main():
            "--kit", str(ROOT), "--bot", str(ROOT / "main.py"), "--seed", str(args.seed)]
     for folder in folders:
         cmd.extend(["--opponent", str(folder / "bot.py")])
+    if args.trace:
+        cmd.extend(["--trace", str(args.trace.expanduser().resolve())])
     os.chdir(ROOT)
     os.execv(sys.executable, cmd)
 

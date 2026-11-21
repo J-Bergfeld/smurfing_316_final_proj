@@ -17,6 +17,9 @@ From the repository root:
 python3 tools/competitor_match.py --seed 420000
 ```
 
+Add `--trace /tmp/mech-420000.jsonl` to save our bot's observations and actions
+for local diagnostics. The trace contains game state and can become large.
+
 To download without running a match, use `python3 tools/competitor_match.py --fetch-only`. The runner launches their Python code locally under your account. It uses a simulator, the team's root `main.py`, and the map and configuration under `arena/` and `check/`. Docker is optional for this workflow.
 
 If you already have all four opponent folders, reuse them without downloading anything:

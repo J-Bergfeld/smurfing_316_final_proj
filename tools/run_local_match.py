@@ -15,6 +15,7 @@ def main():
     parser.add_argument("--kit", type=Path, required=True)
     parser.add_argument("--bot", type=Path, default=Path("example_bot.py"))
     parser.add_argument("--seed", type=int, default=420000)
+    parser.add_argument("--trace", type=Path, help="Write subject observations and actions to JSONL.")
     parser.add_argument("--opponent", action="append", type=Path, default=[],
                         help="Python bot entry point. Repeat to fill more FFA slots.")
     parser.add_argument("--opponent-image", action="append", default=[],
@@ -61,6 +62,7 @@ def main():
         clients = {}
         names = {}
         with ExitStack() as cleanup:
+            trace = cleanup.enter_context(args.trace.open("w", encoding="utf-8")) if args.trace else None
             for slot, (name, command, docker) in zip([player.id, *match.order], entrants):
                 greeting = dict(hello, slot=slot, seed=((slot + 1) * 1779033703) % 2**32)
                 if docker:
@@ -78,7 +80,10 @@ def main():
                     if mech.life:
                         if mech.id in clients:
                             client = clients[mech.id]
-                            mech.action = client.act(match.obs(mech))
+                            observation = match.obs(mech)
+                            mech.action = client.act(observation)
+                            if trace and mech.id == player.id:
+                                trace.write(json.dumps({"type":"step", "obs":observation, "action":mech.action}, separators=(",", ":")) + "\n")
                             if client.dead:
                                 raise SystemExit(f"Bot stopped during match: {names[mech.id]}")
                         else:
@@ -88,6 +93,9 @@ def main():
                 if place is None:
                     place = match.advance()
             subject_client = clients[player.id]
+            if trace:
+                trace.write(json.dumps({"type":"end", "t":match.t, "place":place,
+                                        "events":player.events, "self":player.s}, separators=(",", ":")) + "\n")
             subject_client.end(place, player.kills)
             results = [dict(bot=names[i], slot=i, kills=m.kills, alive=m.life,
                             late=clients[i].late, invalid=clients[i].bad)
