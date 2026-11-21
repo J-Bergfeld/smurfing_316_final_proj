@@ -73,7 +73,6 @@ class Combat:
         yaw_error = abs(angle_diff(aim[0],me['aim'][0])); pitch_error = abs(aim[1]-me['aim'][1])
         aligned = yaw_error < max(.018,math.atan2(2.0,max(1,d))) and pitch_error < max(.025, math.atan2(3.0,max(1,d)))
         clear = target.get('visible',False) and world.arena.clear(origin,[pos[0],pos[1],pos[2]+height])
-        if mode == 'flee' and actor.get('kind') == 'mech': clear = clear and d < 110
         for i,w in enumerate(weapons[:2]):
             if not w: continue
             s = w['stats']; kind = w['kind']; cd = w.get('cooldown',0)

@@ -7,7 +7,7 @@ class Strategy:
     def __init__(self, arena, combat, config, profile='practice'):
         self.arena, self.combat, self.config, self.profile = arena, combat, config, profile
         self.mode = 'hold'; self.until = None; self.goal = None; self.goal_until = 0
-        self.waypoint = None; self.route_until = 0; self.history = []
+        self.waypoint = None; self.route_until = 0; self.route_goal = None; self.history = []
 
     def choose(self, world):
         obs = world.obs; me = obs['self']; now = obs['t']; enemies = world.enemies()
@@ -67,21 +67,24 @@ class Strategy:
         self.goal = list(max(candidates,key=score)[0]); self.goal_until = now+1.5
         return self.goal
 
-    def movement(self, world, goal, urgent):
+    def movement(self, world, goal, urgent, mode='hold', enemy=None):
         obs=world.obs; me=obs['self']; p=me['pos']; now=obs['t']; arena=self.arena
         self.history.append((now,p[:2])); self.history = [v for v in self.history if now-v[0]<1.5]
         stuck = len(self.history)>5 and now-self.history[0][0]>1 and distance(p,self.history[0][1])<2 and distance(p,goal)>8
         elevated = goal[2]-p[2]>3 and distance(p,goal)<40
         if elevated and me['energy']>25:
             waypoint=goal
-        elif now >= self.route_until or stuck or self.waypoint is None or distance(p,self.waypoint)<6:
+        elif now >= self.route_until or stuck or self.waypoint is None or distance(p,self.waypoint)<6 or self.route_goal is None or distance(goal,self.route_goal)>12 or abs(goal[2]-self.route_goal[2])>3:
             self.waypoint=arena.route(p,goal,me.get('stats',{}).get('radius',2.5),me.get('stats',{}).get('height',9)); self.route_until=now+1.5
+            self.route_goal=goal[:]
             waypoint=self.waypoint or goal
         else: waypoint=self.waypoint
         dx,dy=waypoint[0]-p[0],waypoint[1]-p[1]; d=math.hypot(dx,dy)
         move=[dx/d,dy/d] if d>2 else [0,0]
         jet = elevated or (stuck and me['energy']>35)
-        return {'move':move,'jump':bool(jet and me['grounded']), 'boost':bool((jet and not me['grounded']) or (urgent and me['energy']>20 and d>20))}
+        under_pressure = mode == 'flee' and (now-world.last_damage < 3 or (enemy is not None and enemy['visible'] and distance(p,enemy['actor']['pos']) < 200))
+        ground_boost = me['grounded'] and d > 10 and ((urgent and me['energy'] > 20) or (under_pressure and me['energy'] > 35))
+        return {'move':move,'jump':bool(jet and me['grounded']), 'boost':bool((jet and not me['grounded']) or ground_boost)}
 
     def inventory(self, world):
         obs=world.obs; me=obs['self']; out={}; offer=obs.get('offer')

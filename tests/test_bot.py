@@ -90,6 +90,48 @@ class BotTests(unittest.TestCase):
         self.world.update(o)
         self.assertTrue(self.combat.action(self.world,None,'hold')['reload'])
 
+    def test_retreat_returns_fire_at_range(self):
+        o=observation(); e=enemy(150); o['mechs']=[e]
+        o['self']['aim']=[0,math.atan2(-2.5,150)]
+        w=o['self']['weapons'][0]
+        w.update(kind='gun',ammo=12,reload=0,cooldown=0,stats=HELLO['config']['weapons']['gun'])
+        self.world.update(o)
+        action=self.combat.action(self.world,self.world.tracks[7],'flee')
+        self.assertTrue(action['fire'][0])
+
+    def test_retreat_boosts_only_under_pressure(self):
+        o=observation(); o['mechs']=[enemy(150)]; self.world.update(o)
+        track=self.world.tracks[7]
+        action=self.strategy.movement(self.world,[-100,0,0],False,'flee',track)
+        self.assertTrue(action['boost'])
+        o['self']['energy']=30
+        action=self.strategy.movement(self.world,[-100,0,0],False,'flee',track)
+        self.assertFalse(action['boost'])
+        o['self']['energy']=100
+        action=self.strategy.movement(self.world,[-100,0,0],False,'hold',track)
+        self.assertFalse(action['boost'])
+
+    def test_route_replans_when_goal_changes_direction(self):
+        o=observation(); self.world.update(o)
+        first=self.strategy.movement(self.world,[100,0,0],False)
+        self.assertGreater(first['move'][0],0)
+        o['t']=.1; self.world.update(o)
+        changed=self.strategy.movement(self.world,[-100,0,0],False,'flee')
+        self.assertLess(changed['move'][0],0)
+
+    def test_route_cache_survives_small_goal_changes(self):
+        class CountingMap(OpenMap):
+            calls=0
+            def route(self,a,b,*args):
+                self.calls += 1
+                return b
+        arena=CountingMap(); self.strategy=Strategy(arena,self.combat,HELLO['config'])
+        o=observation(); self.world.update(o)
+        self.strategy.movement(self.world,[100,0,0],False)
+        o['t']=.1; self.world.update(o)
+        self.strategy.movement(self.world,[105,0,0],False)
+        self.assertEqual(arena.calls,1)
+
     def test_pickup_and_upgrade(self):
         o=observation(); o['self']['weapons']=[o['self']['weapons'][0],None]; o['pickups']=[{'id':8001,'kind':'laser','pos':[2,0,0]}]
         o['offer']={'choices':[{'id':'gun_velocity'},{'id':'armor'}]}; self.world.update(o)
