@@ -51,11 +51,37 @@ Decision: promote, reject, investigate, or retest; next question:
 
 ## Official practice and candidate history
 
+### Candidate: shared torso gun aim
+
+- Parent: `184bb55`, reported official score 4.88. The integrated policy checks
+  gun alignment against the gun lead, but a charging laser can subsequently
+  replace the commanded aim. Protocol §6 and §9 say both weapons share the
+  slewing torso. The focused controller test reproduces a shot authorized
+  while the commanded laser direction misses the gun lead.
+- Hypothesis: `BOT_GUN_AIM_CHECK=actual` suppresses that shot using the final
+  commanded aim and the next physics tick's slew, preserving ammunition and
+  potentially improving combat placement. The parent is `legacy` (default).
+- Challenge: a later tick within the action could align, the geometry model and
+  simulator may differ from the official engine, and withholding fire can
+  reduce damage. This only affects simultaneous gun/laser or mortar aim
+  conflicts, so the match-level effect may be small. Compare both squad and
+  FFA, inspect late/invalid actions, and do not promote on the unit test alone.
+- Reproduction: `test_gun_respects_final_laser_aim`; dirty candidate patch saved
+  as `mech-testing/gun-aim-candidate.diff`. Squad screen: simulator `e322ffe`,
+  seeds 420100–420115: parent 3.8125, candidate 3.875, paired +0.0625 ±
+  0.335 SE; parent 14 late/invalid, candidate 1 late/invalid. The discrepancy
+  and sequential execution confound the comparison. Raw result:
+  `mech-testing/gun-aim-squad-420100.json`. FFA: parent 11.0, candidate
+  11.5625, paired +0.5625 ± 0.547 SE, zero late/invalid for each, raw
+  `mech-testing/gun-aim-ffa-420100.json`. Official result pending. Decision:
+  investigate on rotated seeds and lineups; keep the parent as default.
+
 The historic table combines official outcomes and local screening. Preserve uncertain commit associations;
 new records should identify the comparison and link the separate suite results below.
 
 | Version / commit | Change and reason | Simulated Δ | Official score / Δ | Status |
 | --- | --- | --- | --- | --- |
+| `184bb55` | Current bot; user reported latest commit score | — | 4.88 / — | Best reported official baseline; submission time and run ID not supplied |
 | `2646e82` | 11:21 p.m. Nov 20 bot: tactics, repositioning and roofs | — | 2.92 / — | Best reported; commit inferred from timestamp |
 | `a528856` | Previous bot | — | 2.56 / — | Baseline reported by user; commit association unverified |
 | `9a73729` | Adaptive combat and farming | — | 2.71 / +0.15 | Baseline reported by user |
@@ -74,7 +100,7 @@ new records should identify the comparison and link the separate suite results b
 ## Run
 
 ```sh
-python3 tools/experiment.py --sim competitors/updated/shanmukha-here--mech-royale \
+python3 tools/experiment.py --sim competitors/updated/shanmukha-here--eagle-eye-mech-royale \
   --factor BOT_POLICY=legacy,integrated --factor BOT_STRAFE=legacy,steady \
   --seed-start 420000 --seeds 16 --out mech-testing/study.json
 ```
@@ -122,4 +148,4 @@ Leave results unknown until measured; do not compare means across different suit
 
 | Candidate / parent | Lineup and simulator revision | Seeds / matches | Mean placement points; paired delta ± SE | Survival / kills; late / invalid | Raw result / decision |
 | --- | --- | --- | --- | --- | --- |
-| No comparable FFA results recorded yet | — | — | — | — | — |
+| Gun aim check / `184bb55` | Five pinned opponents from `competitors/lineup.json`; `e322ffe` | 420100–420115 / 16 pairs | 11.5625 vs 11.0; +0.5625 ± 0.547 SE | 230.95 vs 214.43 s; 1.625 vs 1.4375 kills; 0/0 late/invalid each | `mech-testing/gun-aim-ffa-420100.json`; investigate |

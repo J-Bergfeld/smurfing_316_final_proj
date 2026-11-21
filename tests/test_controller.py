@@ -2,14 +2,30 @@
 import copy
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from bot.controller import Controller
+from bot.combat import aim_and_fire
 from bot.loadout import choose_loadout
 from test_bot import HELLO, enemy, observation
 
 
 class ControllerTests(unittest.TestCase):
+    def test_gun_respects_final_laser_aim(self):
+        obs = observation()
+        me = obs['self']
+        foe = enemy(100)
+        foe['vel'] = [0, 25, 0]
+        me['weapons'][0].update(kind='gun', ammo=12, reload=0, cooldown=0,
+                                stats=HELLO['config']['weapons']['gun'])
+        me['weapons'][1] = {'kind': 'laser', 'charge': .7, 'cooldown': 0,
+                            'stats': HELLO['config']['weapons']['laser']}
+        me['aim'] = [0, 0]
+        with patch.dict('os.environ', {'BOT_GUN_AIM_CHECK': 'legacy'}):
+            self.assertTrue(aim_and_fire(me, foe, HELLO['config'])['fire'][0])
+        with patch.dict('os.environ', {'BOT_GUN_AIM_CHECK': 'actual'}):
+            self.assertFalse(aim_and_fire(me, foe, HELLO['config'])['fire'][0])
+
     def test_movement_shares_controller_world_and_random_generator(self):
         bot = Controller(HELLO)
         self.assertIs(bot.movement.world, bot.world)
