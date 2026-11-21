@@ -58,14 +58,32 @@ Attach `debug` to any action (protocol.md §6) to record lines, points, and labe
 
 ## Botted Out bot
 
-The repository root now contains a Python submission image. `main.py` runs the
-bot; `bot/world.py`, `bot/strategy.py`, `bot/positioning.py`, `bot/navigation.py`,
-`bot/geometry.py`, and `bot/combat.py` separate perception, decisions, position
-scoring, route planning, map geometry, and weapons. The
-default adaptive profile begins with practice-oriented behavior and switches to
-free-for-all behavior after repeated evidence of other players' eliminations.
-Set `BOT_PROFILE=practice` or `BOT_PROFILE=final` to force either policy when
-testing a particular field.
+The repository root contains a Python submission image. `main.py` runs the bot,
+and `bot/controller.py` coordinates its turn decisions. The active policy uses
+`bot/world.py` for perception, `bot/geometry.py` for map queries,
+`bot/movement.py` for navigation and evasion, `bot/combat.py` for target and
+weapon control, and `bot/loadout.py` for objectives and upgrades. The controller
+adapts to practice and free-for-all matches.
+Set `BOT_POLICY=legacy` to run the earlier modular policy; its
+`BOT_PROFILE=practice` and `BOT_PROFILE=final` settings remain available.
+The experimental `BOT_STRAFE`, `BOT_HUNTERS`, `BOT_ECONOMY`,
+`BOT_FIRE_CONTROL`, `BOT_THREAT_MODEL`, and `BOT_LOADOUT` switches apply to the
+legacy policy only.
+The default policy uses a Python-generated navigation cache for the included
+arena and a Python random generator seeded from the match. The cache is used
+only when its manifest matches the arena files; other maps use approximate
+fallback geometry until their cache is built.
+
+To rebuild and validate the cache for the included arena without changing the bundled copy:
+
+```sh
+python3 tools/build_world.py --arena arena --out /tmp/botted-out-grid.bin.gz
+python3 tools/compare_worlds.py bot/terrain_grid.bin.gz /tmp/botted-out-grid.bin.gz
+```
+
+The offline builder currently accepts one-meter, centimeter-scale terrain.
+It builds the raster and navigation data; runtime collision and visibility
+remain approximations.
 
 ```sh
 python3 -m unittest discover -s tests -v
@@ -77,7 +95,7 @@ python3 check/check.py --map-dir /arena -- docker run --rm -i --network none --c
 The tests include small closed-loop movement scenarios and deterministic component
 tests. The supplied checker replays observations; neither it nor the local
 scenarios is the real match engine, and passing them does not establish match
-strength. The position scorer considers rooftop candidates, approximate projectile
+strength. In the legacy policy, the position scorer considers rooftop candidates, approximate projectile
 approach, travel exposure, and cover during gun reloads. Map collision/line-of-sight
 sampling, route search, threat estimates, roof access, and third-party inference
 are approximations. Navigation uses a coarse ground-and-roof graph with walk,

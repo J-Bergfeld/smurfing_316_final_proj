@@ -32,7 +32,9 @@ def provenance(bot):
     diff = subprocess.check_output(['git', 'diff', 'HEAD', '--binary'], cwd=ROOT)
     dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True))
     digest = hashlib.sha256()
-    files = [bot] + sorted((bot.parent/'bot').glob('*.py')) if (bot.parent/'bot').is_dir() else [bot]
+    files = ([bot] + sorted(p for p in (bot.parent/'bot').iterdir()
+                            if p.is_file() and p.suffix in ('.py', '.json', '.gz'))
+             if (bot.parent/'bot').is_dir() else [bot])
     if (bot.parent/'mechfight.py').is_file(): files.append(bot.parent/'mechfight.py')
     for path in files:
         digest.update(str(path.relative_to(bot.parent)).encode()+b'\0'+path.read_bytes())
@@ -44,10 +46,11 @@ def verify_revision(bot, revision):
     """Confirm the external checkout's Python runtime matches a local commit."""
     commit = subprocess.check_output(['git', 'rev-parse', '--verify', revision+'^{commit}'], cwd=ROOT, text=True).strip()
     tracked = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', commit, '--', 'main.py', 'mechfight.py', 'bot/'], cwd=ROOT, text=True).splitlines()
-    files = [name for name in tracked if name.endswith('.py')]
+    files = [name for name in tracked if name.endswith(('.py', '.json', '.gz'))]
     if bot.name != 'main.py' or 'main.py' not in files:
         raise ValueError('revision verification requires the root main.py')
-    actual = {'main.py', *(str(p.relative_to(bot.parent)) for p in (bot.parent/'bot').glob('*.py'))}
+    actual = {'main.py', *(str(p.relative_to(bot.parent)) for p in (bot.parent/'bot').iterdir()
+                            if p.is_file() and p.suffix in ('.py', '.json', '.gz'))}
     if (bot.parent/'mechfight.py').is_file(): actual.add('mechfight.py')
     if actual != set(files): raise ValueError('bot runtime files do not match the revision')
     for name in files:

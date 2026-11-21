@@ -1,37 +1,12 @@
 # Run a local competitor match
 
 The local runner reads its lineup from the ignored file `competitors/lineup.json`.
-The lineup, downloaded repositories, and any opponent-specific dependencies stay
+The lineup and any opponent-specific dependencies stay
 on your computer and are excluded from the submission image.
 
 ## Set up a lineup
 
-Create `competitors/lineup.json` with a simulator checkout, one or more pinned
-opponent repositories, and their Python entry points. For example, replace the
-placeholders in this template with your own values:
-
-```json
-{
-  "checkout_root": "updated",
-  "simulator": "owner--repository",
-  "opponent_python": ".venv/bin/python",
-  "required_modules": ["numpy"],
-  "opponents": [
-    {
-      "repository": "owner/repository",
-      "revision": "full-commit-hash",
-      "entrypoint": "bot.py"
-    }
-  ]
-}
-```
-
-`simulator` identifies the checkout containing `local_sim`; its directory name
-is the repository value with `/` replaced by `--`. Paths for `checkout_root`
-and `opponent_python` are relative to the configuration file. The Python
-interpreter and required modules are optional; install whatever the selected
-opponents need in an ignored virtual environment. The simulator itself requires
-Python, Git, and a C compiler.
+Create `competitors/lineup.json` with a list of simulator opponents
 
 ```bash
 python3 -m venv competitors/.venv

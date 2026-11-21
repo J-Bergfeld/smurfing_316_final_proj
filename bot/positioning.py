@@ -1,5 +1,7 @@
 """Replaceable tactical position scoring over ground and roof candidates."""
 import math
+import os
+import time
 from .geometry import distance
 from .loadout import pickup_slot
 
@@ -16,6 +18,7 @@ class Positioner:
         self.objective = None
         self.objective_since = 0
         self.ignored = {}
+        self.practice_economy = os.getenv('BOT_ECONOMY', 'legacy') == 'adaptive'
 
     def goal_for(self, world, mode, enemy, urgent):
         obs = world.obs; me = obs['self']; now = obs['t']; p = me['pos']; z = obs['zone']; arena = self.arena
@@ -63,6 +66,8 @@ class Positioner:
                         arrival=distance(p,item['pos'])/max(1,me['stats'].get('walk_speed',11.7))
                         if now + arrival + item.get('capture_s',4) > z['shrink_end'] and distance(item['pos'],z['next_center']) > z['next_radius']-10: continue
                     bonus = 25 * (1-me['hp']/max(1,me['max_hp'])) if key=='drops' else 0
+                    if self.practice_economy and world.field == 'squad' and key == 'pickups' and item.get('kind') == 'laser' and not any(w and w['kind']=='laser' for w in me['weapons']):
+                        bonus += 35
                     if key == 'crates':
                         if me['hp'] < .55*me['max_hp'] or me.get('cubes',0) >= world.config.get('cubes',{}).get('stat_cap',10): continue
                         dx,dy=p[0]-item['pos'][0],p[1]-item['pos'][1]; length=math.hypot(dx,dy)
@@ -72,7 +77,8 @@ class Positioner:
                             candidates.append((stand,reward+bonus))
                     else:
                         candidates.append((item['pos'],reward+bonus))
-            if me['hp'] > .7*me['max_hp'] and me.get('cubes',0) < world.config.get('cubes',{}).get('stat_cap',10):
+            farm_health = .5 if self.practice_economy and world.field == 'squad' else .7
+            if me['hp'] > farm_health*me['max_hp'] and me.get('cubes',0) < world.config.get('cubes',{}).get('stat_cap',10):
                 for track in world.tracks.values():
                     actor=track['actor']
                     if actor['kind']!='npc' or not track['visible'] or distance(p,actor['pos'])>110: continue
@@ -114,4 +120,3 @@ class Positioner:
             if ident != self.objective:
                 self.objective, self.objective_since = ident, now
         return self.goal
-
