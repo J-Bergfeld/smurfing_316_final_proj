@@ -39,3 +39,24 @@ def dodge(world):
     risk,ux,uy=min(options)
     if risk > current+1: return None
     return [ux,uy]
+
+
+def blend_dodge(world, desired, evasive, urgent=False):
+    """Choose a safe short step that balances escape with the active route."""
+    if evasive is None: return desired
+    me=world.obs['self']; p=me['pos']; arena=world.arena; zone=world.obs['zone']
+    options=[]
+    for weight in (.5, .75, 1.):
+        x=desired[0]*(1-weight)+evasive[0]*weight
+        y=desired[1]*(1-weight)+evasive[1]*weight
+        mag=math.hypot(x,y)
+        if mag < .01: continue
+        x,y=x/mag,y/mag
+        q=[p[0]+x*5,p[1]+y*5,p[2]]
+        safe = arena.supported(q[0],q[1],q[2],me.get('stats',{}).get('radius',2.5),me.get('stats',{}).get('height',9)) if hasattr(arena,'supported') else arena.walkable(q[0],q[1])
+        if not safe: continue
+        if distance(q,zone['center']) > max(zone['radius']-2,distance(p,zone['center'])): continue
+        progress=x*desired[0]+y*desired[1]
+        score=world.projectile_risk(q)*3+world.threat(q)*.2-progress*(.6 if urgent else .2)
+        options.append((score,[x,y]))
+    return min(options,key=lambda item:item[0])[1] if options else desired

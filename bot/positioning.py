@@ -13,6 +13,9 @@ class Positioner:
         self.last_laser_shot = -1000
         self.reload_origin = None
         self.peek_until = 0
+        self.objective = None
+        self.objective_since = 0
+        self.ignored = {}
 
     def goal_for(self, world, mode, enemy, urgent):
         obs = world.obs; me = obs['self']; now = obs['t']; p = me['pos']; z = obs['zone']; arena = self.arena
@@ -45,9 +48,14 @@ class Positioner:
                 if max(0, roof[2]-p[2]) < me['energy']*.5:
                     candidates.append((roof, 10 if distance(p,enemy['actor']['pos']) > 90 else 2))
         if mode == 'loot':
+            self.ignored = {ident:until for ident,until in self.ignored.items() if until > now}
+            if self.objective is not None and now-self.objective_since > 30:
+                self.ignored[self.objective] = now+60
+                self.objective = None
             for key, reward in (('cubes',42),('pickups',38),('crates',22),('drops',45)):
                 items = obs.get(key,[]) if key == 'drops' else [v['item'] for v in world.loot.values() if v['kind'] == key]
                 for item in items:
+                    if item.get('id') in self.ignored: continue
                     if key=='pickups' and not pickup_slot(item,world)[0]: continue
                     if key=='drops':
                         if item.get('lands_in',0)>15 or item.get('holder') not in (None,me['id']): continue
@@ -55,7 +63,23 @@ class Positioner:
                         arrival=distance(p,item['pos'])/max(1,me['stats'].get('walk_speed',11.7))
                         if now + arrival + item.get('capture_s',4) > z['shrink_end'] and distance(item['pos'],z['next_center']) > z['next_radius']-10: continue
                     bonus = 25 * (1-me['hp']/max(1,me['max_hp'])) if key=='drops' else 0
-                    candidates.append((item['pos'],reward+bonus))
+                    if key == 'crates':
+                        if me['hp'] < .55*me['max_hp'] or me.get('cubes',0) >= world.config.get('cubes',{}).get('stat_cap',10): continue
+                        dx,dy=p[0]-item['pos'][0],p[1]-item['pos'][1]; length=math.hypot(dx,dy)
+                        if length < 1: dx,dy,length=1,0,1
+                        stand=[item['pos'][0]+dx/length*25,item['pos'][1]+dy/length*25,arena.height(item['pos'][0]+dx/length*25,item['pos'][1]+dy/length*25)]
+                        if arena.walkable(stand[0],stand[1],me.get('stats',{}).get('radius',2.5),me.get('stats',{}).get('height',9)):
+                            candidates.append((stand,reward+bonus))
+                    else:
+                        candidates.append((item['pos'],reward+bonus))
+            if me['hp'] > .7*me['max_hp'] and me.get('cubes',0) < world.config.get('cubes',{}).get('stat_cap',10):
+                for track in world.tracks.values():
+                    actor=track['actor']
+                    if actor['kind']!='npc' or not track['visible'] or distance(p,actor['pos'])>110: continue
+                    dx,dy=p[0]-actor['pos'][0],p[1]-actor['pos'][1]; length=max(1,math.hypot(dx,dy))
+                    x,y=actor['pos'][0]+dx/length*50,actor['pos'][1]+dy/length*50
+                    if arena.walkable(x,y,me.get('stats',{}).get('radius',2.5),me.get('stats',{}).get('height',9)):
+                        candidates.append(([x,y,arena.height(x,y)],30))
         held={w['kind'] for w in me['weapons'] if w}
         hostile_weapons=enemy['actor'].get('weapons',[]) if enemy else []
         desired = 35 if 'lightning' in held and 'laser' not in held else 120
@@ -84,5 +108,10 @@ class Positioner:
             if urgent: value -= distance(pos,(zx,zy))*.6
             return value
         self.goal = list(max(candidates,key=score)[0]); self.goal_until = now+(.25 if urgent else 1.5)
+        if mode == 'loot':
+            nearby = [(distance(self.goal,v['item']['pos']),ident) for ident,v in world.loot.items() if ident not in self.ignored]
+            ident = min(nearby)[1] if nearby and min(nearby)[0] < 30 else None
+            if ident != self.objective:
+                self.objective, self.objective_since = ident, now
         return self.goal
 

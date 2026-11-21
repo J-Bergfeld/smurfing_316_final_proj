@@ -7,7 +7,7 @@ from bot.world import World
 from bot.combat import Combat
 from bot.strategy import Strategy
 from bot.navigation import NavigationGraph
-from bot.tactics import dodge
+from bot.tactics import dodge, blend_dodge
 
 
 class Bot:
@@ -17,7 +17,7 @@ class Bot:
         config = hello['config']; self.arena = Map(hello['map']['dir'])
         self.navigation = NavigationGraph(self.arena, config)
         self.world = World(config,self.arena); self.combat = Combat(config)
-        self.strategy = Strategy(self.arena,self.combat,config,os.environ.get('BOT_PROFILE','practice'),self.navigation)
+        self.strategy = Strategy(self.arena,self.combat,config,os.environ.get('BOT_PROFILE','adaptive'),self.navigation)
 
     def act(self, obs):
         self.world.update(obs); mode, enemy, urgent = self.strategy.choose(self.world)
@@ -25,16 +25,20 @@ class Bot:
         action = self.strategy.movement(self.world,goal,urgent,mode,enemy)
         evasive = dodge(self.world)
         if evasive is not None:
-            action['move'] = evasive
+            action['move'] = blend_dodge(self.world, action['move'], evasive, urgent)
         if hasattr(self.strategy, 'motion'):
             self.strategy.motion.record(action['move'])
         action.update(self.strategy.inventory(self.world))
         target = enemy if enemy and (mode=='attack' or (mode=='flee' and distance(obs['self']['pos'],enemy['actor']['pos'])<110)) else None
         capturing = any(drop.get('lands_in',0)<=0 and distance(obs['self']['pos'],drop['pos']) < drop.get('radius',8) for drop in obs.get('drops', []))
-        if mode=='loot' and target is None and not capturing and obs.get('crates') and obs['self']['hp'] >= .9*obs['self']['max_hp']:
-            crate = min(obs['crates'],key=lambda x:distance(obs['self']['pos'],x['pos']))
-            if distance(obs['self']['pos'],crate['pos']) < 100:
-                target = {'actor':dict(crate,kind='crate',vel=[0,0,0]),'visible':True}
+        if mode=='loot' and target is None and not capturing and obs['self']['hp'] >= .7*obs['self']['max_hp']:
+            p=obs['self']['pos']; origin=[p[0],p[1],p[2]+obs['self'].get('stats',{}).get('muzzle_height',7)]
+            farm = [dict(crate,kind='crate',vel=[0,0,0]) for crate in obs.get('crates', [])]
+            farm += [actor for actor in obs.get('mechs', []) if actor.get('kind')=='npc']
+            farm = [actor for actor in farm if distance(p,actor['pos']) < (75 if actor['kind']=='npc' else 60)
+                    and self.world.arena.clear(origin,[actor['pos'][0],actor['pos'][1],actor['pos'][2]+(1.75 if actor['kind']=='npc' else 1.2)])]
+            if farm:
+                target={'actor':min(farm,key=lambda actor:distance(p,actor['pos'])),'visible':True}
         combat = self.combat.action(self.world,target,mode); action.update(combat)
         if 'aim' not in action:
             # Scan toward the most likely threat, otherwise look in the direction of travel.

@@ -56,6 +56,13 @@ class Combat:
         if not target:
             for w in me.get('weapons', []):
                 if w and w['kind']=='gun' and w.get('reload',0)<=0 and w.get('ammo',0)<w.get('stats',{}).get('mag',12): out['reload']=True
+            # A charged laser cannot be cancelled. Point away from the arena
+            # before releasing it, while respecting the weapon's hold limit.
+            for i,w in enumerate(me.get('weapons',[])[:2]):
+                if w and w['kind']=='laser' and w.get('charge',0)>0:
+                    high=me.get('stats',{}).get('max_pitch',1.3)
+                    out['aim']=[me['aim'][0],high]
+                    out['fire'][i]=bool(me['aim'][1] < high-.08 and w['charge'] < w['stats'].get('charge',.75)+w['stats'].get('hold_s',2)-.2)
             return out
         actor = target['actor']; pos = actor['pos']; d = distance(me['pos'],pos)
         mz = me.get('stats',{}).get('muzzle_height',7)
@@ -67,6 +74,18 @@ class Combat:
         if not preferred: preferred = next((w for w in weapons if w and w['kind']=='gun' and w.get('reload',0)<=0 and w.get('ammo',0)>0),None)
         if not preferred: preferred = next((w for w in weapons if w and w['kind']!='gun'),None)
         if not preferred: preferred = next((w for w in weapons if w),None)
+        gun = next((w for w in weapons if w and w['kind']=='gun' and w.get('reload',0)<=0 and w.get('ammo',0)>0),None)
+        laser = next((w for w in weapons if w and w['kind']=='laser' and w.get('charge',0)>0),None)
+        # During early charge, a gun can lead while the torso has enough time
+        # to return to the laser solution before the beam is ready.
+        if laser and gun:
+            beam_aim=aim_at(origin,dest)
+            gun_dest=intercept(origin,dest,actor.get('vel',[0,0,0]),gun['stats'].get('speed',252))
+            gun_aim=aim_at(origin,gun_dest)
+            stats=me.get('stats',{}); turn=max(.01,stats.get('turn_rate',4)); pitch=max(.01,stats.get('pitch_rate',4))
+            remaining=laser['stats'].get('charge',.75)-laser.get('charge',0)
+            return_time=max(abs(angle_diff(gun_aim[0],beam_aim[0]))/turn,abs(gun_aim[1]-beam_aim[1])/pitch)
+            if remaining > return_time+.2: preferred=gun
         if preferred and preferred['kind']=='gun': dest = intercept(origin,dest,actor.get('vel',[0,0,0]),preferred['stats'].get('speed',252))
         aim = aim_at(origin,dest)
         # Mortar needs a ballistic elevation and cannot share aim with a gun accurately.
@@ -84,14 +103,31 @@ class Combat:
             if not w: continue
             s = w['stats']; kind = w['kind']; cd = w.get('cooldown',0)
             if kind == 'gun':
-                out['fire'][i] = bool(clear and aligned and d <= s.get('range',230) and w.get('ammo',1)>0 and w.get('reload',0)<=0 and not use_mortar)
+                gun_dest=intercept(origin,[pos[0],pos[1],pos[2]+height],actor.get('vel',[0,0,0]),s.get('speed',252))
+                gun_aim=aim_at(origin,gun_dest)
+                gun_aligned=abs(angle_diff(gun_aim[0],me['aim'][0])) < max(.018,math.atan2(1.5 if airborne else 2.0,max(1,d))) and abs(gun_aim[1]-me['aim'][1]) < max(.025,math.atan2(2.0 if airborne else 3.0,max(1,d)))
+                out['fire'][i] = bool(clear and gun_aligned and d <= s.get('range',230) and w.get('ammo',1)>0 and w.get('reload',0)<=0 and not use_mortar and world.arena.clear(origin,gun_dest))
                 if w.get('reload',0)<=0 and w.get('ammo',1)<s.get('mag',12)*.4 and (not clear or mode in ('flee','hold','recover')): out['reload'] = True
             elif kind == 'laser':
                 charge = w.get('charge',0); ready = cd <= 0 and d <= s.get('range',280)
                 # Releasing the trigger fires; release immediately when the target is lost.
-                out['fire'][i] = bool(clear and ready and not use_mortar and (charge < s.get('charge',.75) or not aligned))
+                beam_aim=aim_at(origin,[pos[0],pos[1],pos[2]+height])
+                beam_aligned=abs(angle_diff(beam_aim[0],me['aim'][0])) < max(.018,math.atan2(2.0,max(1,d))) and abs(beam_aim[1]-me['aim'][1]) < max(.025,math.atan2(3.0,max(1,d)))
+                acquire=abs(angle_diff(beam_aim[0],me['aim'][0])) < .35 and abs(beam_aim[1]-me['aim'][1]) < .25
+                out['fire'][i] = bool(clear and ready and not use_mortar and ((charge == 0 and acquire) or (charge > 0 and (charge < s.get('charge',.75) or not beam_aligned))))
             elif kind == 'lightning':
-                out['fire'][i] = bool(clear and yaw_error < math.radians(s.get('cone_deg',30)/2)*.8 and d <= s.get('range',45) and me['energy'] >= s.get('energy',3))
+                direction=math.atan2(pos[1]-origin[1],pos[0]-origin[0])
+                out['fire'][i] = bool(clear and abs(angle_diff(direction,me['aim'][0])) < math.radians(s.get('cone_deg',30)/2)*.8 and d <= s.get('range',45) and me['energy'] >= s.get('energy',3))
             elif kind == 'mortar' and use_mortar:
-                out['fire'][i] = bool(clear and aligned and 25 < d < 200 and mortar_pitch(origin,dest,s.get('speed',72),s.get('gravity',22)) is not None)
+                pitch=mortar_pitch(origin,dest,s.get('speed',72),s.get('gravity',22))
+                arc_clear=False
+                if pitch is not None and aligned and 25 < d < 200:
+                    speed=s.get('speed',72); gravity=s.get('gravity',22)
+                    duration=d/max(1,speed*math.cos(pitch)); previous=origin; arc_clear=True
+                    for step in range(1,9):
+                        t=duration*step/8
+                        point=[origin[0]+math.cos(aim[0])*speed*math.cos(pitch)*t,origin[1]+math.sin(aim[0])*speed*math.cos(pitch)*t,origin[2]+speed*math.sin(pitch)*t-.5*gravity*t*t]
+                        if not world.arena.clear(previous,point): arc_clear=False; break
+                        previous=point
+                out['fire'][i] = bool(clear and aligned and arc_clear)
         return out

@@ -5,6 +5,7 @@ jet-assisted ascent, and drops; they are conservative geometric approximations.
 """
 import heapq
 import math
+import time
 from .geometry import distance
 
 
@@ -15,6 +16,7 @@ class NavigationGraph:
         self.radius = mech.get('radius', 2.5); self.height = mech.get('height', 9)
         self.max_slope = math.tan(math.radians(mech.get('max_slope_deg', 50)))
         self.nodes = []; self.cells = {}; self.edges = []
+        self.search = None
         bounds = arena.bounds
         for ix in range(math.ceil(bounds['minX']/spacing), math.floor(bounds['maxX']/spacing)+1):
             for iy in range(math.ceil(bounds['minY']/spacing), math.floor(bounds['maxY']/spacing)+1):
@@ -82,11 +84,21 @@ class NavigationGraph:
         source=self.nearest(start); target=self.nearest(goal)
         if source is None or target is None: return None
         if source==target: return [goal[:]]
-        costs={source:0}; parent={}; queue=[(0,0,source)]; expanded=0
-        while queue and expanded < 500:
+        # Use the lower end of the energy band so a resumed search never keeps
+        # a jet edge that has become unaffordable within that band.
+        energy = max(0, math.floor(energy/10)*10)
+        key=(source,target,energy)
+        if self.search is None or self.search['key'] != key:
+            self.search={'key':key,'costs':{source:0},'parent':{},'queue':[(0,0,source)]}
+        costs=self.search['costs']; parent=self.search['parent']; queue=self.search['queue']; expanded=0
+        deadline=time.perf_counter()+.004
+        found=False
+        while queue and expanded < 500 and time.perf_counter() < deadline:
             _,cost,node=heapq.heappop(queue)
             if cost != costs.get(node): continue
-            if node==target: break
+            if node==target:
+                found=True
+                break
             expanded += 1
             for nxt,weight,kind,rise in self.edges[node]:
                 if kind=='jet' and energy < rise*1.7+10: continue
@@ -95,9 +107,11 @@ class NavigationGraph:
                     costs[nxt]=new; parent[nxt]=node
                     heuristic=distance(self.nodes[nxt][0],self.nodes[target][0])
                     heapq.heappush(queue,(new+heuristic,new,nxt))
-        if target not in parent: return None
+        if not found:
+            if not queue: self.search=None
+            return None
         path=[]; node=target
         while node!=source:
             path.append(self.nodes[node][0][:]); node=parent[node]
-        path.reverse(); path.append(goal[:])
+        path.reverse(); path.append(goal[:]); self.search=None
         return path

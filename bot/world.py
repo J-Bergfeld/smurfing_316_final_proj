@@ -17,9 +17,35 @@ class World:
         self.laser_shot_pos = None
         self.laser_charge = {}
         self.obs = None
+        self.field = 'opening'
+        self.initial_alive = None
+        self.own_kills = set()
+        self.unexplained = 0
+        self.last_field_tick = -1
+        self.attackers = {}
+        self.damage_log = []
 
     def update(self, obs):
         self.obs = obs; now = obs['t']; me = obs['self']
+        if self.initial_alive is None:
+            self.initial_alive = obs['alive']
+        fresh = obs['tick'] > self.last_field_tick
+        if fresh:
+            for event in obs.get('events', []):
+                if event['type'] == 'kill' and event.get('target') is not None:
+                    self.own_kills.add(event['target'])
+                if event['type'] == 'damaged':
+                    if event.get('by') is not None:
+                        self.attackers[event['by']] = now
+                    self.damage_log.append((now, event.get('amount', 0)))
+            if self.field != 'ffa':
+                missing = self.initial_alive - obs['alive'] > len(self.own_kills)
+                self.unexplained = self.unexplained + 1 if missing else 0
+                if self.unexplained >= 5: self.field = 'ffa'
+                elif now >= 20: self.field = 'squad'
+            self.last_field_tick = obs['tick']
+        self.damage_log = [(t, amount) for t, amount in self.damage_log if now-t < 2.5]
+        self.attackers = {ident:t for ident,t in self.attackers.items() if now-t < 8}
         for slot, weapon in enumerate(me.get('weapons', [])):
             if not weapon or weapon.get('kind') != 'laser':
                 self.laser_charge.pop(slot, None)

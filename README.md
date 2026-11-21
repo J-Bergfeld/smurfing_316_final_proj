@@ -62,9 +62,10 @@ The repository root now contains a Python submission image. `main.py` runs the
 bot; `bot/world.py`, `bot/strategy.py`, `bot/positioning.py`, `bot/navigation.py`,
 `bot/geometry.py`, and `bot/combat.py` separate perception, decisions, position
 scoring, route planning, map geometry, and weapons. The
-practice profile assumes coordinated opponents. Set `BOT_PROFILE=final` in the
-image environment to enable more conservative multi-opponent behavior; make that
-choice in the Dockerfile before submitting a final-oriented build.
+default adaptive profile begins with practice-oriented behavior and switches to
+free-for-all behavior after repeated evidence of other players' eliminations.
+Set `BOT_PROFILE=practice` or `BOT_PROFILE=final` to force either policy when
+testing a particular field.
 
 ```sh
 python3 -m unittest discover -s tests -v

@@ -19,6 +19,7 @@ class Strategy:
         self.hop = None
         self.strafe_sign = 1
         self.strafe_until = 0
+        self.retreat_until = 0
 
     def choose(self, world):
         obs = world.obs; me = obs['self']; now = obs['t']; enemies = world.enemies()
@@ -56,17 +57,27 @@ class Strategy:
         # A second nearby combatant is enough to disengage an existing fight;
         # before engaging, require evidence that two enemies face each other.
         fighting = any(abs(angle_diff(a.get('aim',[0])[0], math.atan2(b['pos'][1]-a['pos'][1], b['pos'][0]-a['pos'][0]))) < .35 for a in nearby for b in nearby if a['id'] != b['id'] and distance(a['pos'],b['pos'])<200)
-        third_party = self.profile == 'final' and (fighting or (self.mode == 'attack' and len(nearby)>=2))
+        ffa = self.profile == 'final' or (self.profile != 'practice' and world.field == 'ffa')
+        third_party = ffa and (fighting or (self.mode == 'attack' and len(nearby)>=2))
+        hp = me['hp']/max(1,me['max_hp'])
+        incoming = sum(amount for _,amount in world.damage_log)/2.5
+        close_count = sum(distance(me['pos'],e['pos']) < 160 for e in nearby)
+        finish = bool(closest and closest['visible'] and d < 120 and closest['actor']['hp'] < .3*closest['actor'].get('max_hp',1400) and hp > .3 and close_count <= 2)
+        losing = (close_count >= 3 and hp < .8) or (close_count >= 2 and hp < .55) or (hp < .35 and recent) or incoming > 110
+        if losing and not finish: self.retreat_until = now + 1.5
         if urgency or third_party: proposed = 'flee'
+        elif now < self.retreat_until and not finish: proposed = 'flee'
         elif recent or visible_threat:
             # Later circles require more willingness to commit than the opening.
             threshold = 1.35 if now < 100 and obs['alive'] > 9 else (1.0 if obs['alive'] > 4 else .7)
-            proposed = 'attack' if ratio > threshold and not third_party else 'flee'
+            if not ffa and closest and closest['visible'] and d < 175 and hp > .4 and close_count <= 1:
+                threshold *= .65
+            proposed = 'attack' if (finish or ratio > threshold) and not third_party else 'flee'
         elif me['hp'] < me['max_hp']*.9 and me.get('in_zone',True) and not projectile_threat: proposed = 'recover'
-        elif world.loot or obs.get('drops'): proposed = 'loot'
+        elif world.loot or obs.get('drops') or any(t['visible'] and t['actor']['kind']=='npc' and distance(me['pos'],t['actor']['pos'])<110 for t in world.tracks.values()): proposed = 'loot'
         else: proposed = 'hold'
         if projectile_threat and proposed != 'attack': proposed = 'flee'
-        emergency = urgency or recent or projectile_threat or bool(visible_threat and self.mode not in ('attack','flee')) or third_party
+        emergency = urgency or recent or projectile_threat or losing or bool(visible_threat and self.mode not in ('attack','flee')) or third_party
         if proposed != self.mode and (first_decision or now >= self.until or emergency):
             self.mode = proposed; self.until = now + (1.5 if proposed in ('attack','flee') else 2.5); self.positioner.goal_until = 0
         elif projectile_threat and now >= self.projectile_replan_at:
@@ -138,7 +149,7 @@ class Strategy:
 
     def inventory(self, world):
         obs=world.obs; me=obs['self']; out={}; offer=obs.get('offer')
-        priorities={'nanites':10,'armor':9,'plating':8,'servos':7,'jets':6,'reactor':6,'gun_mag':6,'laser_charge':6,'laser_damage':6,'gun_damage':5,'sensors':5}
+        priorities={'plating':100,'armor':95,'nanites':84,'laser_damage':90,'laser_charge':88,'gun_damage':78,'gun_rate':70,'lightning_efficiency':66,'lightning_range':65,'servos':60,'gun_mag':50,'gun_velocity':48,'gyros':45,'reactor':38,'capacitor':36,'sensors':20,'jets':15}
         if offer: out['pick']=max(range(len(offer['choices'])),key=lambda i:priorities.get(offer['choices'][i]['id'],3))
         for item in sorted(obs.get('pickups',[]),key=lambda i: distance(me['pos'],i['pos'])):
             if distance(me['pos'],item['pos']) > self.config.get('loot',{}).get('pickup_radius',4) or abs(me['pos'][2]-item['pos'][2])>4: continue
