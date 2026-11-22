@@ -136,10 +136,28 @@ def pressure_objective(state, obs, hp, danger):
             value = 30. * (1.5 if hp < .6 else 1.)
             handling = 4 + item['lands_in']*.3
         else: continue
-        if item['pos'][2]-state.world.ground(*item['pos'][:2]) > 3.2: continue
-        free = state.world.nearest_free(state.world.cell(*item['pos'][:2]))
-        if free is None or (grid and grid['component'][free[1]*grid['nx']+free[0]] != component): continue
-        travel = d*1.25/speed + handling
+        elevation=item['pos'][2]-state.world.ground(*item['pos'][:2])
+        if elevation>3.2:
+            # A rooftop item is actionable only when the roof graph supplies a
+            # usable ground access point in our current component.
+            roofs=getattr(state.movement,'roof_graph',None) or ()
+            if kind not in ('cubes','crates','pickups') or danger: continue
+            drain=me['stats'].get('jet_drain',15) or 15
+            max_climb=min(40,(me.get('max_energy',100)-28)/drain*8.9)
+            cell=state.world.cell(*item['pos'][:2]); accesses=[]
+            for roof in roofs:
+                if cell not in roof['cells'] or abs(item['pos'][2]-roof['top'])>3.2: continue
+                for access,ground,edge,climb in roof['access']:
+                    if climb>max_climb: continue
+                    if grid and component is not None and grid['component'][access[1]*grid['nx']+access[0]]!=component: continue
+                    accesses.append((math.dist(pos[:2],ground),climb))
+            if not accesses: continue
+            approach,climb=min(accesses)
+        else:
+            free = state.world.nearest_free(state.world.cell(*item['pos'][:2]))
+            if free is None or (grid and grid['component'][free[1]*grid['nx']+free[0]] != component): continue
+            approach,climb=d,0.
+        travel = approach*1.25/speed + climb/8.9 + handling
         # Estimate the circle at arrival plus the reference's slack. The
         # current observed circle is the starting point for interpolation.
         x,y=item['pos'][:2]

@@ -4,6 +4,30 @@ import time
 from .geometry import distance, angle_diff
 
 
+def enemy_beam_crossfire(obs, config):
+    """Detect an observed enemy beam ending at another mech, away from us."""
+    me=obs['self']; px,py=me['pos'][:2]
+    for beam in obs.get('beams',[]):
+        path=beam.get('path',[]); shooter=beam.get('by')
+        if len(path)<2 or shooter==me.get('id') or beam.get('age',0)>.5: continue
+        distant=True
+        for a,b in zip(path,path[1:]):
+            dx,dy=b[0]-a[0],b[1]-a[1]; denom=dx*dx+dy*dy
+            part=max(0.,min(1.,((px-a[0])*dx+(py-a[1])*dy)/denom)) if denom else 0.
+            if math.hypot(px-a[0]-part*dx,py-a[1]-part*dy)<=22:
+                distant=False; break
+        if not distant: continue
+        end=path[-1]
+        for actor in obs.get('mechs',[]):
+            if actor.get('kind')!='mech' or actor.get('id') in (shooter,me.get('id')): continue
+            scale=1+actor.get('cubes',0)*config['cubes'].get('size_per_cube',.05)
+            radius=config['mech']['radius']*scale+4
+            height=config['mech']['height']*scale
+            if (math.dist(end[:2],actor['pos'][:2])<=radius and
+                    actor['pos'][2]-2<=end[2]<=actor['pos'][2]+height+2): return True
+    return False
+
+
 class World:
     def __init__(self, config, arena):
         self.config, self.arena = config, arena

@@ -241,6 +241,16 @@ class ControllerTests(unittest.TestCase):
         obs['self']['vel'] = [0, 100, 0]
         self.assertFalse(any(move.avoid_projectiles(obs)[0]))
 
+    def test_projectile_behind_wall_does_not_trigger_evasion(self):
+        obs = observation()
+        world = Mock()
+        world.shot_clear.return_value = False
+        move = Movement(world, HELLO['config'], random.Random(1))
+        obs['projectiles'] = [{'kind': 'gun', 'pos': [-20, 0, 5], 'vel': [200, 0, 0]}]
+        self.assertFalse(any(move.avoid_projectiles(obs)[0]))
+        world.shot_clear.return_value = True
+        self.assertTrue(any(move.avoid_projectiles(obs)[0]))
+
     def test_mortar_evasion_detects_direct_hit_before_ground_impact(self):
         obs = observation()
         world = Mock()

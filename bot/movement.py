@@ -4,10 +4,11 @@ import os
 import time
 from collections import deque
 from .geometry import distance, angle_diff
+from .surface_nav import SurfaceNavigator
 
 
 _ROOF_GRAPH_CACHE = {}
-_STEER_DIRECTIONS = tuple((math.cos(i*math.pi/4), math.sin(i*math.pi/4)) for i in range(8))
+_STEER_DIRECTIONS = tuple((math.cos(i*math.pi/8), math.sin(i*math.pi/8)) for i in range(16))
 
 
 def build_roof_access_graph(world):
@@ -155,6 +156,7 @@ class MovementSupport:
 class Movement:
     def __init__(self, world, config, rng):
         self.world=world; self.cfg=config; self.rng=rng
+        self.surface=SurfaceNavigator(world)
         self.nav_method=os.getenv('BOT_NAV_METHOD','spacing')
         self.pressure_strafe_enabled=os.getenv('BOT_PRESSURE_STRAFE','1') != '0'
         self.pressure_steer_enabled=os.getenv('BOT_PRESSURE_STEER','0') == '1'
@@ -525,8 +527,6 @@ class Movement:
         tangent=1-.6*abs(radial)
         x,y=ux*radial-uy*self.strafe*tangent,uy*radial+ux*self.strafe*tangent
         length=math.hypot(x,y); x,y=x/length,y/length
-        if self.pressure_steer_enabled:
-            return self.pressure_steer(obs, (x,y))
         if not me.get('grounded',True): return [x,y]
         for angle in (0.,math.pi/4,-math.pi/4,math.pi/2,-math.pi/2):
             vx=x*math.cos(angle)-y*math.sin(angle); vy=x*math.sin(angle)+y*math.cos(angle)
@@ -570,13 +570,27 @@ class Movement:
         speed=stats.get('boost_speed',19.5) if boost and grounded else stats.get('walk_speed',11.7)
         if any(w and w['kind']=='laser' and w.get('charge',0)>0 for w in me.get('weapons',[])):
             speed*=stats.get('charge_move_mult',.5)
-        choices=((0.,0.),)+_STEER_DIRECTIONS+(desired,)
+        choices=((0.,0.),)+_STEER_DIRECTIONS+tuple((dx*.5,dy*.5) for dx,dy in _STEER_DIRECTIONS)+(desired,)
         best=(float('-inf'),(0.,0.)); previous=self.pressure_last_move
+        now=time.perf_counter()
+        deadline=min(now+.004,self.action_deadline-.003) if self.action_deadline>now else now+.004
         zone_distance=math.dist(p[:2],zone['center'])
         ground_level=grounded and abs(p[2]-self.world.walk_at(*p[:2]))<3.5
         start_cell=self.world.cell(*p[:2]) if ground_level else None
         start_free=self.world.free_cell(start_cell) if ground_level else False
         shots=[]; radius=stats.get('radius',2.5); height=stats.get('height',9.)
+        lasers=[]; carriers=[]
+        owns_lightning=any(w and w['kind']=='lightning' for w in me.get('weapons',[]))
+        for actor in obs.get('mechs',[]):
+            if actor.get('kind')!='mech': continue
+            ap=actor['pos']; d=math.dist(p[:2],ap[:2])
+            if not owns_lightning and 'lightning' in actor.get('weapons',[]) and d<self.cfg['weapons']['lightning']['range']+25:
+                carriers.append(actor)
+            if actor.get('charging') and d<self.cfg['weapons']['laser']['range']+10:
+                scale=1+actor.get('cubes',0)*self.cfg['cubes'].get('size_per_cube',.05)
+                yaw,pitch=actor['aim']
+                lasers.append((ap[0],ap[1],ap[2]+self.cfg['mech']['muzzle_height']*scale,
+                               math.cos(yaw),math.sin(yaw),math.tan(pitch)))
         for shot in obs.get('projectiles',[]):
             if shot['kind']=='mortar': continue
             s=shot['pos']; v=shot['vel']; speed2=math.hypot(v[0],v[1])
@@ -589,8 +603,9 @@ class Movement:
             if abs(rx*v[1]-ry*v[0])/speed2>reach: continue
             shots.append((s,v,25 if shot['kind']=='npc' else 45))
         for dx,dy in choices:
+            if time.perf_counter()>=deadline: break
             vx,vy=me['vel'][:2]; x,y=p[:2]; blocked=False; penalty=0.; progress=None
-            for step in range(14 if shots else 8):
+            for step in range(14 if shots or lasers else 8):
                 tx,ty=dx*speed-vx,dy*speed-vy
                 delta=math.hypot(tx,ty); factor=min(1.,acceleration*.05/max(delta,1e-9))
                 vx+=tx*factor; vy+=ty*factor
@@ -608,15 +623,27 @@ class Movement:
                     part=max(0.,min(1.,((x-ax)*sx+(y-ay)*sy)/denom)) if denom else 0.
                     if math.hypot(x-ax-part*sx,y-ay-part*sy)<radius+.85:
                         z=origin[2]+vel[2]*(t0+.05*part)
-                        if p[2]-.6<z<p[2]+height+.6: penalty+=damage*.3
+                        if (p[2]-.6<z<p[2]+height+.6 and
+                                self.world.shot_clear(origin,(x,y,z))): penalty+=damage*.3
             px,py=progress or (x,y)
             score=((px-p[0])*desired[0]+(py-p[1])*desired[1])*1.6-penalty
+            for actor in carriers:
+                ap=actor['pos']; safe=self.cfg['weapons']['lightning']['range']+8
+                score-=max(0.,safe-math.hypot(px-ap[0],py-ap[1]))*.35
+            for lx,ly,lz,ux,uy,slope in lasers:
+                rx,ry=x-lx,y-ly; along=rx*ux+ry*uy
+                beam_z=lz+along*slope
+                if (0<along<self.cfg['weapons']['laser']['range'] and
+                        abs(rx*uy-ry*ux)<radius+1.5 and p[2]-1<beam_z<p[2]+height+1 and
+                        self.world.shot_clear((lx,ly,lz),(x,y,p[2]+height*.5))):
+                    score-=20
             if blocked: score-=3
             end=math.dist((px,py),zone['center'])
             if zone_distance < zone['radius']-.5 and end>zone['radius']-4 and end>zone_distance:
                 score-=8*(end-zone_distance)
             if dx or dy: score+=.25*(dx*previous[0]+dy*previous[1])
             if score>best[0]: best=(score,(dx,dy))
+        if best[0]==float('-inf'): return list(desired)
         self.pressure_last_move=best[1]
         return list(best[1])
 
@@ -635,6 +662,8 @@ class Movement:
             if math.hypot(mx,my)>=reach: continue
             z=shot['pos'][2]+(v[2]-own[2])*t
             if not p[2]-1.1 <= z <= p[2]+me['stats']['height']+1.1: continue
+            impact=(shot['pos'][0]+v[0]*t,shot['pos'][1]+v[1]*t,shot['pos'][2]+v[2]*t)
+            if not self.world.shot_clear(shot['pos'],impact): continue
             vh=math.hypot(vx,vy)
             if vh<1: continue
             px,py=-vy/vh,vx/vh

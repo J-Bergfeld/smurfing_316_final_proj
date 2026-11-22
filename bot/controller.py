@@ -12,7 +12,7 @@ from .positional_field import PositionalField
 from .corridor import FightCorridor
 from .tactical_planner import TacticalPlanner
 from .lead_tracker import LeadTracker
-from .world import update_perception
+from .world import update_perception, enemy_beam_crossfire
 class Controller:
     def __init__(self,hello):
         self.cfg=hello['config']; self.world=Arena(hello['map']['dir']); self.rng=random.Random(hello.get('seed') or hello.get('slot',0)+1)
@@ -54,6 +54,8 @@ class Controller:
         self.lobby_alive = None
         self.lobby_kills = 0
         self.lobby_unknown_deaths = 0
+        self.enemy_beam_observations = 0
+        self.enemy_beam_tick = -1
         self.credit_hit_at = -100.
         self.credit_target = None
         self.credit_absorbed_at = -100.
@@ -429,6 +431,10 @@ class Controller:
                 or (self.lobby_unknown_deaths >= 2 and now < 110)
                 or self.lobby_unknown_deaths >= 3)):
             self.ffa = True
+        if not self.ffa and not self.pressure_force_squad and obs['tick']!=self.enemy_beam_tick:
+            self.enemy_beam_tick=obs['tick']
+            if enemy_beam_crossfire(obs,self.cfg): self.enemy_beam_observations+=1
+            if self.enemy_beam_observations>=2: self.ffa=True
         self.recent_damage.extend((now, e.get('amount', 0)) for e in obs.get('events', [])
                                   if e['type'] == 'damaged' and e.get('weapon') not in ('npc', 'zone'))
         for event in obs.get('events', []):
@@ -506,6 +512,7 @@ class Controller:
         goal, urgent = self.pressure_zone(obs)
         action = {'tick': obs['tick'], 'move': [0., 0.], 'fire': [False, False], 'boost': False, 'jump': False}
         shell = self.movement.avoid_shells(obs)
+        surface_destination = None
         target = None
         mode = 'idle'
         slip = None
@@ -588,6 +595,7 @@ class Controller:
             objective = self.choose_objective(obs, hp, danger, True)
             if objective:
                 ident, kind, item, dist, seen_at = objective
+                surface_destination = item['pos']
                 if ident != self.loot_id:
                     self.loot_id, self.loot_since = ident, now
                 elif now-self.loot_since > 30:
@@ -632,8 +640,20 @@ class Controller:
         # shooting an active attacker while moving to safety or another goal.
         if threat and selected['active'] and can_see and (not cautious or provoked):
             target = threat
+        surface_goal=goal if mode in ('zone','zone-walk') else surface_destination if mode=='loot' else None
+        if (surface_goal is not None and
+                (pos[2]-self.world.walk_at(*pos[:2])>3.5 or
+                 (len(surface_goal)>2 and surface_goal[2]-self.world.walk_at(*surface_goal[:2])>3.5) or
+                 (mode in ('zone','zone-walk') and not any(action['move'])))):
+            deadline=min(self.action_deadline-.006,time.perf_counter()+.004)
+            if deadline>time.perf_counter():
+                surface=self.movement.surface.step(obs,surface_goal,deadline)
+                if surface: action.update(surface)
         if mode in ('fight','kite'):
             action['move'] = list(self.movement.pressure_avoid_lightning(obs, action['move']))
+            if (self.movement.pressure_steer_enabled and any(action['move']) and
+                    time.perf_counter()<self.action_deadline-.006):
+                action['move'] = self.movement.pressure_steer(obs, action['move'], action.get('boost',False))
         if mode != 'roof-climb':
             self.movement.apply_evasion_and_recovery(obs, action, mode)
         apply_weapon_control(self, obs, action, target, threat if can_see else None, True)

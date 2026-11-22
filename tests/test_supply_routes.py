@@ -58,6 +58,17 @@ class SupplyRouteTests(unittest.TestCase):
         self.state.world.shot_clear = Mock(side_effect=lambda eye, target: target[0] == 30)
         self.assertEqual(self.choose()[0], 5001)
 
+    def test_pressure_rooftop_loot_requires_a_reachable_roof(self):
+        self.state.decision_policy = 'pressure'
+        self.state.supply_drops = False
+        self.state.items = {5000: ('cubes', {'id': 5000, 'pos': [30, 0, 10]}, 100)}
+        roof = {'cells': {(0, 0)}, 'top': 10,
+                'access': [((0, 0), (24, 0), (32, 0), 10)]}
+        self.state.movement = SimpleNamespace(roof_graph=[roof])
+        self.assertEqual(self.choose()[0], 5000)
+        roof['access'] = []
+        self.assertIsNone(self.choose())
+
     def test_pressure_take_request_has_a_short_cooldown(self):
         state = SimpleNamespace()
         self.obs['self']['weapons'][1] = None

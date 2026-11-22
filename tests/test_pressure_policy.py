@@ -6,10 +6,22 @@ from unittest.mock import Mock, patch
 from bot.combat import aim_and_fire, apply_weapon_control, assess_pressure, mortar_solution, shot_to_surface_clear, pressure_advantage, pressure_dps, pressure_laser_peek
 from bot.controller import Controller
 from bot.loadout import pressure_pickup, choose_loadout
+from bot.world import enemy_beam_crossfire
 from test_bot import HELLO, enemy, observation
 
 
 class PressurePolicyTests(unittest.TestCase):
+    def test_enemy_beam_detection_requires_another_mech_and_avoids_our_path(self):
+        obs=observation()
+        other=enemy(150); other['id']=8
+        obs['mechs']=[enemy(100),other]
+        beam={'by':7,'kind':'laser','age':0,'path':[[100,0,7],[150,0,4]]}
+        obs['beams']=[beam]
+        self.assertTrue(enemy_beam_crossfire(obs,HELLO['config']))
+        beam['path']=[[100,0,7],[130,0,4]]
+        self.assertFalse(enemy_beam_crossfire(obs,HELLO['config']))
+        beam['path']=[[-100,0,7],[150,0,4]]
+        self.assertFalse(enemy_beam_crossfire(obs,HELLO['config']))
     def test_laser_peek_charges_in_cover_then_moves_to_firing_position(self):
         obs=observation(); me=obs['self']; me['pos']=[-3,0,0]
         laser={'kind':'laser','charge':0,'cooldown':0,'stats':HELLO['config']['weapons']['laser']}
@@ -160,6 +172,23 @@ class PressurePolicyTests(unittest.TestCase):
             self.bot.act_pressure(self.obs)
             self.assertTrue(self.bot.ffa)
 
+    def test_ffa_inference_counts_at_most_once_per_observation(self):
+        self.bot.tracks = {}
+        with patch('bot.controller.enemy_beam_crossfire', return_value=True), \
+             patch.object(self.bot, 'mark_exploration'), \
+             patch.object(self.bot.movement, 'avoid_shells', return_value=None), \
+             patch.object(self.bot.movement, 'apply_evasion_and_recovery'), \
+             patch.object(self.bot, 'choose_objective', return_value=None), \
+             patch.object(self.bot, 'pressure_roam', return_value=None), \
+             patch.object(self.bot, 'pressure_exposure_hold', return_value=None), \
+             patch('bot.controller.apply_weapon_control'):
+            self.bot.act_pressure(self.obs)
+            self.bot.act_pressure(self.obs)
+            self.assertFalse(self.bot.ffa)
+            self.obs['tick'] += 1
+            self.bot.act_pressure(self.obs)
+            self.assertTrue(self.bot.ffa)
+
     def test_optional_pressure_field_preserves_target_and_safety_priorities(self):
         self.bot.pressure_field = True
         self.bot.field = Mock(key='previous', route=[(1, 1)], breakdown={'old': True})
@@ -217,6 +246,24 @@ class PressurePolicyTests(unittest.TestCase):
              patch('bot.controller.apply_weapon_control'):
             self.bot.act_pressure(self.obs)
         self.bot.field.choose.assert_not_called()
+
+    def test_pressure_rooftop_objective_uses_surface_climb(self):
+        self.bot.action_deadline = time.perf_counter()+1
+        self.bot.tracks = {}
+        item = {'id': 5000, 'pos': [30, 0, 10]}
+        objective = (5000, 'cubes', item, 30, self.obs['t'])
+        with patch.object(self.bot, 'mark_exploration'), \
+             patch.object(self.bot, 'pressure_zone', return_value=((0, 0), False)), \
+             patch.object(self.bot, 'choose_objective', return_value=objective), \
+             patch.object(self.bot.world, 'walk_at', return_value=0), \
+             patch.object(self.bot.movement, 'avoid_shells', return_value=None), \
+             patch.object(self.bot.movement, 'navigate', return_value=[1., 0.]), \
+             patch.object(self.bot.movement.surface, 'step', return_value={'move':[1., 0.], 'jump':True, 'boost':False}) as step, \
+             patch.object(self.bot.movement, 'apply_evasion_and_recovery'), \
+             patch('bot.controller.apply_weapon_control'):
+            action = self.bot.act_pressure(self.obs)
+        self.assertTrue(action['jump'])
+        self.assertEqual(step.call_args.args[1], item['pos'])
 
     def test_missing_opponent_is_not_treated_as_current(self):
         self.bot.tracks[self.foe['id']]['seen'] = self.obs['t'] - .1
