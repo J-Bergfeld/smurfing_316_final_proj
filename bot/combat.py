@@ -189,7 +189,11 @@ def aim_and_fire(me, target, config, squad=False, world=None):
     gun_muzzle=(p[0],p[1],p[2]+st['muzzle_height']) if use_dev_aim else muzzle
     center=(pos[0],pos[1],pos[2]+height*.5); dist=math.hypot(center[0]-p[0],center[1]-p[1])
     weapons=me['weapons']; gun=next((w for w in weapons if w and w['kind']=='gun'),None)
-    gun_point=intercept(gun_muzzle,center,tv,gun['stats']['speed']) if gun and use_dev_aim else None
+    gun_center=center
+    if gun and use_dev_aim and os.getenv('BOT_GUN_TIMING','current')=='next_tick':
+        gun_muzzle=(gun_muzzle[0]+vel[0]*.05,gun_muzzle[1]+vel[1]*.05,gun_muzzle[2])
+        gun_center=(center[0]+tv[0]*.05,center[1]+tv[1]*.05,center[2])
+    gun_point=intercept(gun_muzzle,gun_center,tv,gun['stats']['speed']) if gun and use_dev_aim else None
     upper_aim=False
     if (gun_point is not None and world is not None and kind=='mech'
             and os.getenv('BOT_COVER_AIM','off')=='on'
@@ -250,6 +254,8 @@ def assess_combat(state, obs, squad, late, hp):
     me=obs['self']; p=me['pos']; t=obs['t']
     seen=[]; choices=[]; hidden=[]; danger=False; crowd=0
     target_policy=os.getenv('BOT_TARGET_POLICY','baseline')
+    finish_priority=os.getenv('BOT_FINISH_PRIORITY','on' if target_policy=='finish' else 'off')=='on'
+    safe_retreat=os.getenv('BOT_SAFE_RETREAT','on' if target_policy=='finish' else 'off')=='on'
     for tr in state.tracks.values():
         a=tr['actor']
         if a['kind']!='mech' or t-tr['seen']>2.5: continue
@@ -271,7 +277,7 @@ def assess_combat(state, obs, squad, late, hp):
         if squad and a.get('hp',1400)<=.3*a.get('max_hp',1400): cost-=200
         if recent: cost-=40
         if closing>3: cost-=15
-        if target_policy == 'finish':
+        if finish_priority:
             # Spend a short burst on an attacker we can plausibly finish;
             # do not commit to a chase or rely on unseen enemy upgrades.
             gun=next((w for w in me['weapons'] if w and w['kind']=='gun'),None)
@@ -290,7 +296,7 @@ def assess_combat(state, obs, squad, late, hp):
     losing=(near>=2 and hp<.55) or (near>=3 and hp<.8)
     if target and hp<.35 and target['hp']/max(1,target['max_hp'])>hp+.1: losing=True
     if target and target['hp']/max(1,target['max_hp'])<.25 and hp>.2 and near<=2: losing=False
-    if target_policy=='finish' and near>=2 and hp<.55:
+    if safe_retreat and near>=2 and hp<.55:
         # A low-health target does not cancel retreat from two close hunters.
         losing=True; finishing=False
     if losing: state.lose_at=t

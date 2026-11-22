@@ -1,5 +1,5 @@
 FROM python:3.13-slim
-# Finish-target practice candidate; policy settings are declared below.
+# Practice baseline; experimental policy settings are declared below.
 WORKDIR /bot
 COPY main.py mechfight.py ./
 COPY bot ./bot
@@ -14,6 +14,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     BOT_AIM_MODEL=dev \
     BOT_RELOAD_MODEL=sam \
     BOT_COVER_AIM=off \
-    BOT_TARGET_POLICY=finish \
-    BOT_DUEL_SAFETY=off
+    BOT_TARGET_POLICY=baseline \
+    BOT_DUEL_SAFETY=off \
+    BOT_FINISH_PRIORITY=off \
+    BOT_SAFE_RETREAT=off \
+    BOT_GUN_TIMING=current
 ENTRYPOINT ["python3", "-u", "/bot/main.py"]
