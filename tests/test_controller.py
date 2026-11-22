@@ -229,6 +229,29 @@ class ControllerTests(unittest.TestCase):
                 self.assertEqual(action['boost'],expected)
                 self.assertNotEqual(action['move'],[0,0])
 
+    def test_projectile_evasion_accounts_for_height_and_own_velocity(self):
+        obs = observation()
+        move = Movement(Mock(), HELLO['config'], random.Random(1))
+        shot = {'kind': 'gun', 'pos': [-20, 0, 5], 'vel': [200, 0, 0]}
+        obs['projectiles'] = [shot]
+        self.assertTrue(any(move.avoid_projectiles(obs)[0]))
+        shot['pos'][2] = 100
+        self.assertFalse(any(move.avoid_projectiles(obs)[0]))
+        shot['pos'][2] = 5
+        obs['self']['vel'] = [0, 100, 0]
+        self.assertFalse(any(move.avoid_projectiles(obs)[0]))
+
+    def test_mortar_evasion_detects_direct_hit_before_ground_impact(self):
+        obs = observation()
+        world = Mock()
+        world.solid.return_value = False
+        world.line_walkable.return_value = True
+        move = Movement(world, HELLO['config'], random.Random(1))
+        obs['projectiles'] = [{'kind': 'mortar', 'pos': [-20, 0, 6], 'vel': [70, 0, 0]}]
+        self.assertIsNotNone(move.avoid_shells(obs))
+        obs['projectiles'][0]['pos'][2] = 100
+        self.assertIsNone(move.avoid_shells(obs))
+
     def test_spacing_moves_away_from_nearby_second_enemy(self):
         obs=observation(); foe=enemy(80); other=enemy(-30); other['id']=8
         world=Mock(); world.line_walkable.return_value=True; world.free_cell.return_value=True

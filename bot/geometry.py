@@ -215,6 +215,33 @@ class Arena:
         raw=(path/'terrain.i16').read_bytes(); n=self.terrain['nx']*self.terrain['ny']
         if len(raw)!=n*2: raise ValueError('terrain size mismatch')
         self.heights=struct.unpack('<%dh'%n,raw); self.prisms=data['prisms']; self.grid={}; self._free={}; self._surface={}; self._block_max={}
+        self.trunks=[]; self.trunk_grid={}; self.crowns=[]; self.crown_grid={}
+        rules=data.get('rules',{}); density=rules.get('canopyDensity',0); transmittance=rules.get('canopyBlockT',0)
+        self.canopy_limit=(-math.log(transmittance)/density if density>0 and 0<transmittance<1 else math.inf)
+        trees=data.get('trees',{}); fields=trees.get('fields',[]); values=trees.get('data',[])
+        if fields:
+            columns={name:i for i,name in enumerate(fields)}
+            if all(name in columns for name in ('x','y','z','crownBase','trunkR')):
+                for offset in range(0,len(values),len(fields)):
+                    row=values[offset:offset+len(fields)]
+                    if len(row)<len(fields): break
+                    x,y,z,base,radius=(row[columns[name]] for name in ('x','y','z','crownBase','trunkR'))
+                    if radius<=0 or base<=0: continue
+                    index=len(self.trunks); self.trunks.append((x,y,z,base,radius))
+                    for gx in range(math.floor((x-radius)/16),math.floor((x+radius)/16)+1):
+                        for gy in range(math.floor((y-radius)/16),math.floor((y+radius)/16)+1):
+                            self.trunk_grid.setdefault((gx,gy),[]).append(index)
+                if all(name in columns for name in ('x','y','z','height','crownR','crownBase')):
+                    for offset in range(0,len(values),len(fields)):
+                        row=values[offset:offset+len(fields)]
+                        if len(row)<len(fields): break
+                        x=row[columns.get('crownX',columns['x'])]; y=row[columns.get('crownY',columns['y'])]
+                        z=row[columns['z']]; base=row[columns['crownBase']]; height=row[columns['height']]; radius=row[columns['crownR']]
+                        if radius<=0 or height<=base: continue
+                        index=len(self.crowns); self.crowns.append((x,y,z+(base+height)/2,radius,(height-base)/2))
+                        for gx in range(math.floor((x-radius)/16),math.floor((x+radius)/16)+1):
+                            for gy in range(math.floor((y-radius)/16),math.floor((y+radius)/16)+1):
+                                self.crown_grid.setdefault((gx,gy),[]).append(index)
         self.body_size = (FIT_RADIUS, FIT_HEIGHT)
         self.fit_level = 0
         self.swept_fit_level = 12
@@ -401,6 +428,56 @@ class Arena:
                     q=t+(end-t)*i/steps
                     if a[2]+dz*q<self.ground(a[0]+dx*q,a[1]+dy*q): return False
             t=end
+        return True
+
+    def proximity_visible(self,a,b):
+        """Proximity vision ignores foliage but can be blocked by tree trunks."""
+        if not self.shot_clear(a,b): return False
+        dx,dy,dz=(b[i]-a[i] for i in range(3)); horizontal=dx*dx+dy*dy
+        candidates=set()
+        for cell in _ray_cells(a,b): candidates.update(self.trunk_grid.get(cell,()))
+        for index in candidates:
+            x,y,z,base,radius=self.trunks[index]
+            if horizontal<1e-12:
+                if (a[0]-x)**2+(a[1]-y)**2>=radius**2: continue
+                lo,hi=0.,1.
+            else:
+                bx,by=a[0]-x,a[1]-y
+                linear=bx*dx+by*dy
+                disc=linear*linear-horizontal*(bx*bx+by*by-radius*radius)
+                if disc<=0: continue
+                root=math.sqrt(disc)
+                lo=max(0.,(-linear-root)/horizontal); hi=min(1.,(-linear+root)/horizontal)
+            if lo>hi: continue
+            if abs(dz)<1e-12:
+                if z<=a[2]<=z+base: return False
+            else:
+                first=(z-a[2])/dz; last=(z+base-a[2])/dz
+                if max(lo,min(first,last))<=min(hi,max(first,last)): return False
+        return True
+
+    def vision_clear(self,a,b,proximity=False):
+        """Check sight through terrain, trunks and, outside sensor range, canopy."""
+        if not self.proximity_visible(a,b): return False
+        if proximity: return True
+        dx,dy,dz=(b[i]-a[i] for i in range(3)); length=math.dist(a,b)
+        if length<1e-9: return True
+        candidates=set()
+        for cell in _ray_cells(a,b): candidates.update(self.crown_grid.get(cell,()))
+        through=0.
+        for index in candidates:
+            x,y,z,r,h=self.crowns[index]
+            ox,oy,oz=(a[0]-x)/r,(a[1]-y)/r,(a[2]-z)/h
+            vx,vy,vz=dx/r,dy/r,dz/h
+            aa=vx*vx+vy*vy+vz*vz
+            bb=ox*vx+oy*vy+oz*vz
+            cc=ox*ox+oy*oy+oz*oz-1
+            disc=bb*bb-aa*cc
+            if aa<=0 or disc<=0: continue
+            root=math.sqrt(disc)
+            lo=max(0.,(-bb-root)/aa); hi=min(1.,(-bb+root)/aa)
+            through+=max(0.,hi-lo)*length
+            if through>self.canopy_limit: return False
         return True
 
     def standable(self,x,y,z,radius=2.6,height=9):

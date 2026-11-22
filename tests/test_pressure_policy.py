@@ -38,10 +38,45 @@ class PressurePolicyTests(unittest.TestCase):
         self.assertGreater(pressure_dps(HELLO['config'], {'lightning'}, 0, 30, True, False), 0)
         self.assertEqual(pressure_dps(HELLO['config'], {'lightning'}, 0, 100, True, False), 0)
 
+    def test_lightning_spacing_considers_secondary_carrier(self):
+        primary = enemy(100)
+        carrier = enemy(45)
+        carrier['id'] = 8
+        carrier['weapons'] = ['lightning']
+        self.obs['mechs'] = [primary, carrier]
+        with patch.object(self.bot.world, 'line_walkable', return_value=True):
+            move = self.bot.movement.pressure_avoid_lightning(self.obs, (1., 0.))
+            self.assertLessEqual(move[0], 0)
+            self.obs['self']['weapons'][1] = {'kind': 'lightning'}
+            self.assertEqual(self.bot.movement.pressure_avoid_lightning(self.obs, (1., 0.)), (1., 0.))
+
     def test_shot_clearance_stops_at_target_surface(self):
         class WallAtTarget:
             def shot_clear(self, start, end): return end[0] < 99
         self.assertTrue(shot_to_surface_clear(WallAtTarget(), (0, 0, 0), (100, 0, 0), 2.5))
+
+    def test_pressure_gun_lead_uses_target_motion_and_live_speed(self):
+        me = self.obs['self']
+        target = enemy(120)
+        target['vel'] = [0, 12, 0]
+        slow = aim_and_fire(me, target, HELLO['config'], pressure=True)['aim'][0]
+        gun = next(w for w in me['weapons'] if w and w['kind'] == 'gun')
+        gun['stats']['speed'] *= 2
+        fast = aim_and_fire(me, target, HELLO['config'], pressure=True)['aim'][0]
+        self.assertGreater(slow, fast)
+        self.assertGreater(fast, 0)
+        target['vel'] = [0, 0, 0]
+        self.assertAlmostEqual(aim_and_fire(me, target, HELLO['config'], pressure=True)['aim'][0], 0)
+
+    def test_pressure_aims_at_exposed_head_over_low_cover(self):
+        me = self.obs['self']
+        target = enemy(80)
+        class LowWall:
+            def shot_clear(self, start, end):
+                return end[2] > 7
+        open_aim = aim_and_fire(me, target, HELLO['config'], pressure=True)['aim']
+        covered_aim = aim_and_fire(me, target, HELLO['config'], world=LowWall(), pressure=True)['aim']
+        self.assertGreater(covered_aim[1], open_aim[1])
 
     def test_pressure_loadout_accepts_mortar_without_dropping_gun(self):
         gun = {'kind': 'gun'}
@@ -189,6 +224,14 @@ class PressurePolicyTests(unittest.TestCase):
         self.assertEqual(engaged, [])
         self.assertIsNone(target)
 
+    def test_pressure_target_scoring_favors_finishable_rear_target(self):
+        other = enemy(80)
+        other.update(id=8, hp=200, aim=[0, 0])
+        self.bot.tracks[8] = {'actor': other, 'seen': self.obs['t'], 'los': True}
+        self.assertIs(assess_pressure(self.bot, self.obs)[2]['actor'], other)
+        self.bot.tracks[8]['seen'] -= 1
+        self.assertIs(assess_pressure(self.bot, self.obs)[2]['actor'], self.foe)
+
     def test_missing_nearby_drone_is_removed_when_position_is_visible(self):
         npc = {'id': 101, 'kind': 'npc', 'pos': [5, 0, 0], 'vel': [0, 0, 0]}
         self.bot.tracks = {101: {'actor': npc, 'seen': self.obs['t'] - .1, 'los': True}}
@@ -196,6 +239,32 @@ class PressurePolicyTests(unittest.TestCase):
         with patch.object(self.bot.world, 'shot_clear', return_value=True):
             self.bot.update_world(self.obs)
         self.assertNotIn(101, self.bot.tracks)
+
+    def test_missing_entities_outside_proximity_are_retained(self):
+        npc = {'id': 101, 'kind': 'npc', 'pos': [-30, 0, 0], 'vel': [0, 0, 0]}
+        self.bot.tracks = {101: {'actor': npc, 'seen': self.obs['t'] - .1, 'los': True}}
+        self.bot.items = {102: ('cubes', {'id': 102, 'pos': [-30, 0, 0]}, self.obs['t'] - 1)}
+        self.bot.decision_policy = 'pressure'
+        with patch.dict(self.bot.cfg['vision'], {'near_range': 20}), \
+             patch.object(self.bot.world, 'shot_clear', return_value=True):
+            self.bot.update_world(self.obs)
+        self.assertIn(101, self.bot.tracks)
+        self.assertIn(102, self.bot.items)
+
+    def test_lead_history_uses_visible_observations_only(self):
+        self.bot.decision_policy = 'pressure'
+        self.obs['mechs'] = [self.foe]
+        with patch.object(self.bot.world, 'shot_clear', return_value=True), \
+             patch.object(self.bot.world, 'vision_clear', return_value=False):
+            self.bot.update_world(self.obs)
+        self.assertFalse(self.bot.tracks[self.foe['id']]['visible'])
+        self.assertNotIn(self.foe['id'], self.bot.lead_tracker.tracks)
+        self.obs['t'] += .1
+        with patch.object(self.bot.world, 'shot_clear', return_value=True), \
+             patch.object(self.bot.world, 'vision_clear', return_value=True):
+            self.bot.update_world(self.obs)
+        self.assertTrue(self.bot.tracks[self.foe['id']]['visible'])
+        self.assertIn(self.foe['id'], self.bot.lead_tracker.tracks)
 
     def test_unseen_attacker_direction_takes_priority_over_idle_aim(self):
         self.bot.tracks = {}
@@ -341,6 +410,29 @@ class PressurePolicyTests(unittest.TestCase):
         me['aim'] = action['aim']
         self.assertTrue(aim_and_fire(me, target, HELLO['config'], pressure=True)['fire'][1])
         target['hp'] = 100
+        self.assertFalse(aim_and_fire(me, target, HELLO['config'], pressure=True)['fire'][1])
+
+    def test_aim_only_does_not_start_a_weapon_but_keeps_active_charge(self):
+        me = self.obs['self']
+        me['weapons'][1] = {'kind': 'laser', 'charge': 0, 'cooldown': 0,
+                            'stats': HELLO['config']['weapons']['laser']}
+        target = enemy(40)
+        self.assertFalse(any(aim_and_fire(me, target, HELLO['config'], pressure=True, allow_fire=False)['fire']))
+        me['weapons'][1]['charge'] = .2
+        self.assertTrue(aim_and_fire(me, target, HELLO['config'], pressure=True, allow_fire=False)['fire'][1])
+
+    def test_pressure_laser_uses_rear_and_cookoff_for_lethal_release(self):
+        me = self.obs['self']
+        me['weapons'] = [None, {'kind': 'laser', 'charge': .3, 'cooldown': 0,
+                                'stats': HELLO['config']['weapons']['laser']}]
+        target = enemy(40)
+        target['hp'] = 260
+        me['aim'] = aim_and_fire(me, target, HELLO['config'], pressure=True)['aim']
+        self.assertTrue(aim_and_fire(me, target, HELLO['config'], pressure=True)['fire'][1])
+        target['aim'] = [0, 0]
+        self.assertFalse(aim_and_fire(me, target, HELLO['config'], pressure=True)['fire'][1])
+        target['aim'] = [3.141592653589793, 0]
+        target['weapons'].append('mortar')
         self.assertFalse(aim_and_fire(me, target, HELLO['config'], pressure=True)['fire'][1])
 
     def test_pressure_mortar_tries_high_arc_over_obstacle(self):

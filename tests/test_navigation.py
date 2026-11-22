@@ -117,6 +117,17 @@ class NavigationTests(unittest.TestCase):
         vx, vy = movement.pressure_steer(obs, (1., 0.))
         self.assertGreater(abs(vy), .5)
 
+    def test_pressure_steering_does_not_walk_into_passing_projectile(self):
+        world = Mock()
+        world.walk_at.return_value = 0
+        world.cell.side_effect = lambda x, y: (int(round(x)), int(round(y)))
+        world.free_cell.return_value = True
+        movement = Movement(world, HELLO['config'], random.Random(1))
+        obs = observation()
+        obs['projectiles'] = [{'kind': 'gun', 'pos': [-20, 7, 4], 'vel': [35, 0, 0]}]
+        vx, vy = movement.pressure_steer(obs, (0., 1.))
+        self.assertLess(vy, .9)
+
     def test_route_steering_is_gated_and_does_not_replace_combat(self):
         movement = Movement(Mock(), HELLO['config'], random.Random(1))
         movement.pressure_route_steer = True

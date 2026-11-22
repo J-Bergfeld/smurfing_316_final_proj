@@ -534,6 +534,30 @@ class Movement:
                 return [vx,vy]
         return [0.,0.]
 
+    def pressure_avoid_lightning(self, obs, desired):
+        """Avoid closing on any nearby lightning carrier while circling."""
+        me=obs['self']; p=me['pos']
+        if any(w and w['kind']=='lightning' for w in me.get('weapons',[])):
+            return desired
+        safe=self.cfg['weapons']['lightning']['range']+8
+        carriers=[a for a in obs.get('mechs',[]) if a['kind']=='mech'
+                  and 'lightning' in a.get('weapons',[])
+                  and math.dist(p[:2],a['pos'][:2])<safe+10]
+        if not carriers: return desired
+        choices=[desired,(0.,0.)]+[(math.cos(i*math.pi/4),math.sin(i*math.pi/4)) for i in range(8)]
+        best=None
+        for dx,dy in choices:
+            end=(p[0]+dx*6,p[1]+dy*6)
+            if me.get('grounded',True) and not self.world.line_walkable(p,end): continue
+            cost=0.
+            for actor in carriers:
+                old=math.dist(p[:2],actor['pos'][:2]); new=math.dist(end,actor['pos'][:2])
+                if new<safe:
+                    cost+=max(0.,safe-new)*.18+max(0.,old-new)*.8
+            score=dx*desired[0]+dy*desired[1]-cost
+            if best is None or score>best[0]: best=(score,(dx,dy))
+        return best[1] if best else (0.,0.)
+
     def pressure_kite(self, obs, target):
         """Keep a wider band around the nearest attacker when outnumbered."""
         return self.pressure_strafe(obs, target, 130, 190)
@@ -558,8 +582,11 @@ class Movement:
             s=shot['pos']; v=shot['vel']; speed2=math.hypot(v[0],v[1])
             if speed2<1: continue
             rx,ry=p[0]-s[0],p[1]-s[1]
-            if math.hypot(rx,ry)>95 or (rx*v[0]+ry*v[1])/speed2 < -3: continue
-            if abs(rx*v[1]-ry*v[0])/speed2>4.5+radius: continue
+            reach=radius+1+max(speed,math.hypot(*me['vel'][:2]))*.7
+            if math.hypot(rx,ry)>95 or (rx*v[0]+ry*v[1])/speed2 < -reach: continue
+            # A bullet that misses our present location can still intersect a
+            # candidate path, so keep all shots reachable during the horizon.
+            if abs(rx*v[1]-ry*v[0])/speed2>reach: continue
             shots.append((s,v,25 if shot['kind']=='npc' else 45))
         for dx,dy in choices:
             vx,vy=me['vel'][:2]; x,y=p[:2]; blocked=False; penalty=0.; progress=None
@@ -598,15 +625,19 @@ class Movement:
         reach=me['stats']['radius']+1.1; dx=dy=0.; laser=False
         for shot in obs.get('projectiles',[]):
             if shot['kind']=='mortar': continue
-            v=shot['vel']; v2=sum(x*x for x in v)
+            v=shot['vel']; own=me.get('vel', (0,0,0))
+            vx,vy=v[0]-own[0],v[1]-own[1]
+            v2=vx*vx+vy*vy
             if v2<1: continue
-            t=((cx-shot['pos'][0])*v[0]+(cy-shot['pos'][1])*v[1]+(cz-shot['pos'][2])*v[2])/v2
+            t=((cx-shot['pos'][0])*vx+(cy-shot['pos'][1])*vy)/v2
             if not 0<t<=.7: continue
-            mx,my=shot['pos'][0]+v[0]*t-cx,shot['pos'][1]+v[1]*t-cy
+            mx,my=shot['pos'][0]+vx*t-cx,shot['pos'][1]+vy*t-cy
             if math.hypot(mx,my)>=reach: continue
-            vh=math.hypot(v[0],v[1])
+            z=shot['pos'][2]+(v[2]-own[2])*t
+            if not p[2]-1.1 <= z <= p[2]+me['stats']['height']+1.1: continue
+            vh=math.hypot(vx,vy)
             if vh<1: continue
-            px,py=-v[1]/vh,v[0]/vh
+            px,py=-vy/vh,vx/vh
             if px*mx+py*my>0: px,py=-px,-py
             dx+=px; dy+=py
         for actor in obs.get('mechs',[]):
@@ -624,10 +655,16 @@ class Movement:
             x,y,z=shot['pos']; vx,vy,vz=shot['vel']
             for step in range(80):
                 x+=vx*.05; y+=vy*.05; z+=vz*.05; vz-=cfg.get('gravity',22)*.05
-                if not self.world.solid(x,y,z): continue
-                d=math.hypot(x-p[0],y-p[1])
+                t=(step+1)*.05
+                own=me.get('vel',(0,0,0)); px=p[0]+own[0]*t; py=p[1]+own[1]*t; pz=p[2]+own[2]*t
+                # Shells also explode on a direct mech hit, before reaching
+                # terrain or a building. Include that impact in the warning.
+                direct=(math.hypot(x-px,y-py)<me['stats']['radius']+1
+                        and pz-1<=z<=pz+me['stats']['height']+1)
+                if not direct and not self.world.solid(x,y,z): continue
+                d=math.hypot(x-px,y-py)
                 if d<radius and step*.05<2.5:
-                    dx,dy=(p[0]-x,p[1]-y) if d>=.5 else (-vy,vx); length=math.hypot(dx,dy)
+                    dx,dy=(px-x,py-y) if d>=.5 else (-vy,vx); length=math.hypot(dx,dy)
                     if length<1e-9: break
                     dx,dy=dx/length,dy/length
                     for rot in (0,.7,-.7,1.4,-1.4):

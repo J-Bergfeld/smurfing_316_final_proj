@@ -11,6 +11,7 @@ from .movement import Movement
 from .positional_field import PositionalField
 from .corridor import FightCorridor
 from .tactical_planner import TacticalPlanner
+from .lead_tracker import LeadTracker
 from .world import update_perception
 class Controller:
     def __init__(self,hello):
@@ -18,6 +19,7 @@ class Controller:
         self.body_size = (self.cfg['mech']['radius'], self.cfg['mech']['height'])
         self.world.set_body_size(*self.body_size)
         self.tracks={}; self.items={}; self.hits={}; self.attacker_memory={}; self.kills=set(); self.initial=None; self.unexplained=0; self.ffa=False
+        self.lead_tracker=LeadTracker()
         self.last_hurt=-100.; self.last_threat=-100.; self.lose_at=-100.; self.retreat=False; self.hold=None; self.phase=None
         self.target_id=None; self.target_at=-100.; self.loot_id=None; self.loot_since=0; self.bad={}
         self.movement=Movement(self.world,self.cfg,self.rng)
@@ -78,6 +80,7 @@ class Controller:
         if cursor and not (i0<=cursor[0]<=i1 and j0<=cursor[1]<=j1): cursor=None
         eye=[p[0],p[1],p[2]+obs['self']['stats'].get('eye_height',8)]
         half=math.radians(self.cfg['vision'].get('fov_deg',120))*.5
+        near=self.cfg['vision'].get('near_range',45)+obs['self']['stats'].get('near_range_bonus',0)
         # Exploration is background bookkeeping. Reserve time for decisions and
         # the protocol response even when many visibility rays are expensive.
         now=time.perf_counter()
@@ -92,8 +95,10 @@ class Controller:
                 if self.seen_cells.get(key,-1e6)>t-2: continue
                 x=xmin+(i+.5)*32; y=ymin+(j+.5)*32
                 d=math.hypot(x-p[0],y-p[1])
-                if d>150 or (d>40 and abs(angle_diff(math.atan2(y-p[1],x-p[0]),aim))>half): continue
-                if d<20 or world.shot_clear(eye,[x,y,world.ground(x,y)+2]): self.seen_cells[key]=t
+                point=[x,y,world.ground(x,y)+2]
+                close=math.dist(eye,point)<near
+                if d>150 or (not close and abs(angle_diff(math.atan2(y-p[1],x-p[0]),aim))>half): continue
+                if world.vision_clear(eye,point,close): self.seen_cells[key]=t
         self.exploration_cursor=None
 
     def pressure_roam(self, obs, hp):
@@ -626,6 +631,8 @@ class Controller:
         # shooting an active attacker while moving to safety or another goal.
         if threat and selected['active'] and can_see and (not cautious or provoked):
             target = threat
+        if mode in ('fight','kite'):
+            action['move'] = list(self.movement.pressure_avoid_lightning(obs, action['move']))
         if mode != 'roof-climb':
             self.movement.apply_evasion_and_recovery(obs, action, mode)
         apply_weapon_control(self, obs, action, target, threat if can_see else None, True)

@@ -342,7 +342,7 @@ def mortar_solution(world,tube,foot,velocity,speed,gravity,stats,pressure=False)
         t+=.1
     return yaw,pitch
 
-def aim_and_fire(me, target, config, squad=False, world=None, pressure=False, allow_fire=True):
+def aim_and_fire(me, target, config, squad=False, world=None, pressure=False, allow_fire=True, gun_lead=None):
     """Aim at an already selected, shootable target and set weapon triggers.
 
     The caller chooses targets, verifies visibility, and manages charging
@@ -356,12 +356,29 @@ def aim_and_fire(me, target, config, squad=False, world=None, pressure=False, al
     use_dev_aim=os.getenv('BOT_AIM_MODEL','sam') == 'dev'
     muzzle=(p[0]+vel[0]*.075,p[1]+vel[1]*.075,p[2]+st['muzzle_height']+(vel[2]*.075 if pressure and not me.get('grounded',True) else 0))
     gun_muzzle=(p[0],p[1],p[2]+st['muzzle_height']) if use_dev_aim and not pressure else muzzle
-    center=(pos[0],pos[1],pos[2]+height*.5); dist=math.hypot(center[0]-p[0],center[1]-p[1])
+    center=(pos[0],pos[1],pos[2]+height*.5)
+    # A low obstacle can hide the body while leaving the upper part exposed.
+    # Perception already accepts that sight line; weapons must aim there too.
+    if pressure and kind=='mech' and callable(getattr(world,'shot_clear',None)):
+        head=(pos[0],pos[1],pos[2]+height*.85)
+        if (not shot_to_surface_clear(world,muzzle,center,radius)
+                and shot_to_surface_clear(world,muzzle,head,radius*.8)):
+            center=head
+    dist=math.hypot(center[0]-p[0],center[1]-p[1])
     if pressure: dist=math.dist(muzzle, center)
     weapons=me['weapons']; gun=next((w for w in weapons if w and w['kind']=='gun'),None)
-    # Account for input latency; the pressure policy tracks the target's
-    # near-term position rather than extrapolating its entire bullet flight.
-    gun_point=tuple(center[i]+tv[i]*.075 if i < 2 else center[i] for i in range(3)) if gun and pressure else (intercept(gun_muzzle,center,tv,gun['stats']['speed']) if gun and use_dev_aim else None)
+    # Account for command latency and bullet travel using the live gun speed.
+    # The reference uses a damped lead against mechs, but full lead for NPCs.
+    gun_point = None
+    if gun and pressure:
+        speed=max(1.,gun['stats']['speed']); travel=0.
+        factor=(.45 if kind=='mech' else 1.) if gun_lead is None else gun_lead
+        for _ in range(4):
+            dt=.075+factor*travel
+            gun_point=(center[0]+tv[0]*dt,center[1]+tv[1]*dt,center[2])
+            travel=max(0.,math.dist(gun_muzzle,gun_point)-3.)/speed
+    elif gun and use_dev_aim:
+        gun_point=intercept(gun_muzzle,center,tv,gun['stats']['speed'])
     gy,gp=aim_at(gun_muzzle,gun_point) if gun_point is not None else (lead(muzzle,center,tv,gun['stats']['speed'],abs(tv[2])<.5) if gun else (0.,0.))
     latency=.075 if pressure else .125
     dx=center[0]+tv[0]*latency-muzzle[0]; dy=center[1]+tv[1]*latency-muzzle[1]
@@ -372,11 +389,21 @@ def aim_and_fire(me, target, config, squad=False, world=None, pressure=False, al
         beam_clear = shot_to_surface_clear(world, muzzle, point, radius)
     aim=[gy,gp] if gun else [hy,hp]; fire=[False,False]
     laser=next((w for w in weapons if w and w['kind']=='laser'),None)
+    laser_multiplier=1.
+    if pressure and kind=='mech' and laser:
+        if 'mortar' in target.get('weapons',[]):
+            laser_multiplier*=1+laser['stats'].get('cookoff',0)
+        facing=target.get('aim')
+        if facing:
+            incoming=math.atan2(p[1]-pos[1],p[0]-pos[0])
+            if abs(angle_diff(incoming,facing[0]))>math.radians(config['mech'].get('front_arc_deg',180)*.5):
+                laser_multiplier*=config['mech'].get('rear_mult',1)
+        laser_multiplier*=max(0.,1-target.get('stats',{}).get('armor',0))
     laser_ready=False
     if pressure and laser and laser.get('charge',0)>0:
         ls=laser['stats']; charge=laser['charge']; full=ls['charge']
         damage=ls['damage']*(ls['min_frac']+(1-ls['min_frac'])*min(1,(charge+.1)/full))
-        damage*=1+config['cubes']['damage_per_cube']*min(me['cubes'],config['cubes']['stat_cap'])
+        damage*=(1+config['cubes']['damage_per_cube']*min(me['cubes'],config['cubes']['stat_cap']))*laser_multiplier
         laser_ready=charge>=full-.16 or damage>=target.get('hp',math.inf)
     tol_y=math.atan2(radius*(2.2 if pressure else .75),max(dist,1))
     tol_p=math.atan2(height*(.72 if pressure else .4),max(dist,1))
@@ -403,7 +430,7 @@ def aim_and_fire(me, target, config, squad=False, world=None, pressure=False, al
             if pressure:
                 damage_scale=1+config['cubes']['damage_per_cube']*min(me['cubes'],config['cubes']['stat_cap'])
                 def beam_damage(value):
-                    return s['damage']*(s['min_frac']+(1-s['min_frac'])*min(1,value/full))*damage_scale
+                    return s['damage']*(s['min_frac']+(1-s['min_frac'])*min(1,value/full))*damage_scale*laser_multiplier
                 if charge>0 and (charge>=full-.16 or beam_damage(charge+.1)>=target.get('hp',math.inf)):
                     aim=[hy,hp]
                 if charge>0:
@@ -448,6 +475,11 @@ def aim_and_fire(me, target, config, squad=False, world=None, pressure=False, al
         aligned=abs(angle_diff(gy,actual[0]+yaw_step))<tol_y and abs(gp-actual[1]-pitch_step)<tol_p
         for i,w in enumerate(weapons[:2]):
             if w and w['kind']=='gun': fire[i]=fire[i] and aligned
+    if not allow_fire:
+        # A laser already charging must still be held or released deliberately.
+        # No other weapon should start firing during an aim-only watch.
+        for i,w in enumerate(weapons[:2]):
+            if not w or w['kind']!='laser' or w.get('charge',0)<=0: fire[i]=False
     return {'aim':aim,'fire':fire}
 
 def favorable_fight(state, obs, track, hp):
@@ -521,7 +553,21 @@ def assess_pressure(state, obs):
         known.append(item)
         engaged.append(item)
     visible = [item for item in known if item['current']]
-    target = max(visible, key=lambda item: (1.5 if item['track']['los'] else 1)/(1+item['distance']/60), default=None)
+    has_laser=any(w and w['kind']=='laser' for w in me.get('weapons',[]))
+    def target_score(item):
+        actor=item['actor']; pos=actor['pos']
+        score=(1.5 if item['track']['los'] else 1)/(1+item['distance']/60)
+        max_hp=max(1,actor.get('max_hp',1400) or 1400)
+        hp=max(0,min(max_hp,actor.get('hp',max_hp)))
+        score*=1+.6*(1-hp/max_hp)
+        facing=actor.get('aim')
+        if facing:
+            bearing=math.atan2(me['pos'][1]-pos[1],me['pos'][0]-pos[0])
+            if abs(angle_diff(bearing,facing[0]))>math.radians(state.cfg['mech'].get('front_arc_deg',180)*.5):
+                score*=1.25
+        if has_laser and 'mortar' in actor.get('weapons',[]): score*=1.25
+        return score
+    target = max(visible, key=target_score, default=None)
     return known, engaged, target
 
 
@@ -590,8 +636,9 @@ def apply_weapon_control(state, obs, action, target, foe, squad):
             if d<150 and (actor['id']==state.npc_id or error<.7): candidates.append((error,d,actor['id'],actor))
         if candidates: target=min(candidates)[-1]
     if target:
-        try: action.update(aim_and_fire(me,target,state.cfg,squad,state.world,
-                                        getattr(state, 'decision_policy', '') == 'pressure'))
+        tracker=getattr(state,'lead_tracker',None)
+        lead_factor=tracker.factor(target) if pressure and tracker else None
+        try: action.update(aim_and_fire(me,target,state.cfg,squad,state.world,pressure,gun_lead=lead_factor))
         except (KeyError,ValueError,ZeroDivisionError): pass
         if getattr(state, 'decision_policy', '') == 'pressure':
             if any(w and w['kind'] == 'gun' and w.get('ammo', 0) <= 0 and w.get('reload', 0) <= 0 for w in me['weapons']):
@@ -616,7 +663,9 @@ def apply_weapon_control(state, obs, action, target, foe, squad):
         action['aim']=[yaw,0]
         if pressure and watch:
             try:
-                watched = aim_and_fire(me, nearest, state.cfg, squad, state.world, True, False)
+                tracker=getattr(state,'lead_tracker',None)
+                watched = aim_and_fire(me, nearest, state.cfg, squad, state.world, True, False,
+                                       tracker.factor(nearest) if tracker else None)
                 action['aim'] = watched['aim']
                 for i, w in enumerate(me['weapons'][:2]):
                     if w and w['kind'] == 'laser' and w.get('charge', 0) > 0:

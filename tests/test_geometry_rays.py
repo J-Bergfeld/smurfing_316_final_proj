@@ -28,6 +28,27 @@ class GeometryRayTests(unittest.TestCase):
             self.assertEqual(cells[-1],(math.floor(b[0]/16),math.floor(b[1]/16)))
             self.assertLess(len(cells),100)
 
+    def test_proximity_vision_accounts_for_trunks_but_shots_do_not(self):
+        world = Arena.__new__(Arena)
+        world.trunks = [(5., 0., 0., 10., 1.)]
+        world.trunk_grid = {(0, 0): [0]}
+        world.shot_clear = lambda a, b: True
+        self.assertFalse(world.proximity_visible((0, 0, 5), (10, 0, 5)))
+        self.assertTrue(world.proximity_visible((0, 0, 12), (10, 0, 12)))
+        self.assertTrue(world.proximity_visible((0, 2, 5), (10, 2, 5)))
+        world.shot_clear = lambda a, b: False
+        self.assertFalse(world.proximity_visible((0, 2, 5), (10, 2, 5)))
+
+    def test_canopy_blocks_distant_vision_but_not_proximity_sensors(self):
+        world = Arena.__new__(Arena)
+        world.proximity_visible = lambda a, b: True
+        world.crowns = [(5., 0., 5., 3., 3.)]
+        world.crown_grid = {(0, 0): [0]}
+        world.canopy_limit = 4.
+        self.assertFalse(world.vision_clear((0, 0, 5), (10, 0, 5)))
+        self.assertTrue(world.vision_clear((0, 0, 5), (10, 0, 5), proximity=True))
+        self.assertTrue(world.vision_clear((0, 4, 5), (10, 4, 5)))
+
     def test_exposure_hold_goal_is_walkable_and_inside_next_circle(self):
         zone={'next_center':[72.,-222.], 'next_radius':380.}
         pos=[182.,-168.,5.]

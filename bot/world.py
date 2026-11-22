@@ -1,5 +1,6 @@
 """Per-match memory with uncertain enemy and anonymous sound tracks."""
 import math
+import time
 from .geometry import distance, angle_diff
 
 
@@ -128,28 +129,49 @@ class World:
 
 def update_perception(state,obs):
     t=obs['t']; me=obs['self']; p=me['pos']; muzzle=(p[0],p[1],p[2]+me['stats']['muzzle_height'])
+    # Absence is evidence only inside the omnidirectional proximity sensors.
+    # Outside them the last position may simply be outside the torso's view.
+    near_range=state.cfg.get('vision',{}).get('near_range',45)+me['stats'].get('near_range_bonus',0)
+    verify_range=min(40,near_range)
+    proximity_visible=getattr(state.world,'proximity_visible',state.world.shot_clear)
+    eye=(p[0],p[1],p[2]+me['stats']['eye_height'])
     for actor in obs.get('mechs',[]):
         height=state.cfg['npc']['height'] if actor['kind']=='npc' else state.cfg['mech']['height']*(1+actor.get('cubes',0)*state.cfg['cubes'].get('size_per_cube',.05))
         center=(actor['pos'][0],actor['pos'][1],actor['pos'][2]+height*.5)
         los=state.world.shot_clear(muzzle,center)
         if not los and actor['kind']=='mech': los=state.world.shot_clear(muzzle,(*actor['pos'][:2],actor['pos'][2]+height*.85))
-        state.tracks[actor['id']]={'actor':actor,'seen':t,'los':los}
+        viewed=False
+        if getattr(state,'decision_policy','')=='pressure' and hasattr(state,'lead_tracker'):
+            vision=state.cfg.get('vision',{}); d=math.dist(eye,center)
+            far=vision.get('range',200)+me['stats'].get('vision_bonus',0)
+            close=d<near_range
+            bearing=math.atan2(actor['pos'][1]-p[1],actor['pos'][0]-p[0])
+            in_view=close or (d<far and abs(angle_diff(bearing,me['aim'][0]))<math.radians(vision.get('fov_deg',120)*.5))
+            if in_view and time.perf_counter()<getattr(state,'action_deadline',math.inf)-.008:
+                vision_clear=getattr(state.world,'vision_clear',None)
+                if vision_clear:
+                    viewed=(vision_clear(eye,center,close) or
+                            vision_clear(eye,(*actor['pos'][:2],actor['pos'][2]+height*.95),close))
+                else:
+                    viewed=los
+                if viewed: state.lead_tracker.observe(actor,me,t)
+        state.tracks[actor['id']]={'actor':actor,'seen':t,'los':los,'visible':viewed}
     if getattr(state, 'decision_policy', '') == 'pressure':
         eye=(p[0],p[1],p[2]+me['stats']['eye_height'])
         for ident,tr in list(state.tracks.items()):
             actor=tr['actor']
-            if actor['kind'] != 'npc' or tr['seen'] == t or math.dist(p[:2],actor['pos'][:2]) >= 40: continue
+            if actor['kind'] != 'npc' or tr['seen'] == t or math.dist(p[:2],actor['pos'][:2]) >= verify_range: continue
             target=(*actor['pos'][:2],actor['pos'][2]+state.cfg['npc']['height']*.5)
-            if state.world.shot_clear(eye,target): del state.tracks[ident]
+            if math.dist(eye,target)<near_range and proximity_visible(eye,target): del state.tracks[ident]
     state.tracks={k:v for k,v in state.tracks.items() if t-v['seen']<=(120 if v['actor']['kind']=='npc' else 20)}
     for typ in ('crates','cubes','pickups'):
         seen={item['id'] for item in obs.get(typ,[])}
         for item in obs.get(typ,[]): state.items[item['id']]=(typ,item,t)
         for ident,(kind,item,when) in list(state.items.items()):
             grace = 0 if getattr(state, 'decision_policy', '') == 'pressure' else .35
-            if kind!=typ or ident in seen or t-when<=grace or math.dist(p[:2],item['pos'][:2])>=40: continue
+            if kind!=typ or ident in seen or t-when<=grace or math.dist(p[:2],item['pos'][:2])>=verify_range: continue
             eye=(p[0],p[1],p[2]+me['stats']['eye_height']); at=(*item['pos'][:2],item['pos'][2]+1.5)
-            if state.world.shot_clear(eye,at): del state.items[ident]
+            if math.dist(eye,at)<near_range and proximity_visible(eye,at): del state.items[ident]
     for event in obs.get('events',[]):
         if event['type']=='damaged' and event.get('by') is not None:
             state.last_hurt=t
