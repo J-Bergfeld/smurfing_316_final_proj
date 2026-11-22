@@ -14,6 +14,13 @@ tests low-health isolated shots without changing movement. `BOT_RELOAD_MODEL=cov
 tests partial reload behind cover with a conservative approach-time check;
 `BOT_DUEL_SAFETY=on` strengthens exposure penalties in the positional field.
 
+The user reported **4.77** for the comment-only commit `3f2a51a`, whose bot
+behavior matches finish-target commit `ff1db05`. The reported aim-only
+builders-4 reference `26c9ad6` scored 5.42, a difference of −0.65. Runs use
+fresh random seeds, so this comparison does not establish causality. Keep the
+5.42 result as the stronger reported reference and do not promote the trial.
+Submission run ID and time were not provided.
+
 On the counterbalanced, frozen squad proxy `e322ffe`, the eight-seed target
 screen 422940–422947 averaged 5.625 for control, 5.875 for finish and 5.875
 for opportunity. A disjoint confirmation 423240–423247 averaged 6.375 for
@@ -140,6 +147,7 @@ Ten focused behavior checks passed. The packaged protocol check passed with 298 
 | Commit / settings | Score | Squad-proxy mean / official minus proxy | Status / provenance |
 | --- | ---: | --- | --- |
 | `26c9ad6`, dev aim only | **5.42** | — | User-reported builders-4 score; run ID and timestamp unknown. |
+| `3f2a51a`, finishable-attacker trial | 4.77 | — | User-reported official score; run ID and timestamp unknown. |
 | `6e0c84c`, partial-cover aim | 5.20 | — | User-reported builders-4 score; run ID and timestamp unknown. |
 | `e9de118`, dev reload only | 4.96 | — | User-reported builders-3 score; run ID and timestamp unknown. |
 | `c776cb3`, dev aim and reload; finish approach and reload cover off | 5.15 | — | User-reported official score; run ID and timestamp unknown. |
