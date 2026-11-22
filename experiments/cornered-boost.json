@@ -1,0 +1,4 @@
+{
+  "A": {"root":"..", "env":{}, "hypothesis":"Default policy reference"},
+  "B": {"root":"..", "env":{"BOT_CORNERED_BOOST":"1"}, "hypothesis":"Extra ground speed during projectile evasion when retreat cannot reach cover improves placement"}
+}

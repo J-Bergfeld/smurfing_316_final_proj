@@ -1,0 +1,121 @@
+{
+  "stage": "screen",
+  "builds": {
+    "A": "00a11419708c079dcdaa57b3ac8eb9db49cae985182bbcd8061cef0a1ce479f5",
+    "B": "805c104e4749610f460db8f6f34c62c349f7c0c3faa341003d6416ed21140f78"
+  },
+  "context": {
+    "sim": "71f4e70796d5b20777951d0317edf4bdfaf76fc1fdfc8dff50dc5281e4517be8",
+    "kit": "023ed220514f29dda9389ccd4643625ffc7aa494569d18c28098553bb2a315bc",
+    "tools": "453da278ff0775ca7f46f2b3680984c7552ca05c34d3d6240785cd0cc471abc6"
+  },
+  "spec": {
+    "A": {
+      "root": "..",
+      "env": {
+        "BOT_POLICY": "integrated",
+        "BOT_NAV_METHOD": "legacy",
+        "BOT_GUN_AIM_CHECK": "actual",
+        "BOT_AIM_MODEL": "dev",
+        "BOT_SUPPLY_DROPS": "0",
+        "BOT_CORNER_DUEL": "1",
+        "BOT_POSITIONAL_FIELD": "1",
+        "BOT_FIGHT_CORRIDOR": "0",
+        "BOT_EARLY_DRONE": "0",
+        "BOT_SAFE_COMBAT_CUBES": "0"
+      },
+      "hypothesis": "955e6bf gameplay configuration"
+    },
+    "B": {
+      "root": "..",
+      "env": {
+        "BOT_POLICY": "integrated",
+        "BOT_NAV_METHOD": "legacy",
+        "BOT_GUN_AIM_CHECK": "actual",
+        "BOT_AIM_MODEL": "dev",
+        "BOT_SUPPLY_DROPS": "0",
+        "BOT_CORNER_DUEL": "1",
+        "BOT_POSITIONAL_FIELD": "1",
+        "BOT_FIGHT_CORRIDOR": "0",
+        "BOT_EARLY_DRONE": "0",
+        "BOT_SAFE_COMBAT_CUBES": "1"
+      },
+      "hypothesis": "Short fresh cube detours without adding observed firing lines"
+    }
+  },
+  "seed_start": 422500,
+  "seeds": 16,
+  "compile_seconds": 0.46993425000000005,
+  "geometry_sha256": "b020a40c6f45feff893d95cd9d254b865bc8ea590c090e5b91db82705d05b6b1",
+  "parent_report_sha256": null,
+  "summaries": {
+    "A": {
+      "mean": 4.6875,
+      "matches": 16,
+      "kills": 2.1875,
+      "survival_s": 185.0375,
+      "late": 1,
+      "invalid": 1
+    },
+    "B": {
+      "mean": 5.125,
+      "matches": 16,
+      "kills": 2.5,
+      "survival_s": 209.2875,
+      "late": 1,
+      "invalid": 1
+    }
+  },
+  "comparisons": {
+    "B-A": {
+      "delta": 0.4375,
+      "median": 0.0,
+      "sd": 3.0543684562715527,
+      "se": 0.7635921140678882,
+      "pairs": 16,
+      "win_fraction": 0.25,
+      "per_seed": {
+        "422500": 0,
+        "422501": 0,
+        "422502": 0,
+        "422503": -1,
+        "422504": 2,
+        "422505": -1,
+        "422506": 0,
+        "422507": 11,
+        "422508": 0,
+        "422509": -1,
+        "422510": 0,
+        "422511": -3,
+        "422512": 0,
+        "422513": -2,
+        "422514": 1,
+        "422515": 1
+      },
+      "bootstrap95": [
+        -0.6875,
+        2.125
+      ],
+      "worst_regressions": [
+        [
+          422511,
+          -3
+        ],
+        [
+          422513,
+          -2
+        ],
+        [
+          422503,
+          -1
+        ]
+      ],
+      "mean_metric_deltas": {
+        "kills": 0.3125,
+        "game_seconds": 24.250000000000004,
+        "terminal_cubes": 0.3125,
+        "incoming_damage": 277.360906018995
+      }
+    }
+  }
+}

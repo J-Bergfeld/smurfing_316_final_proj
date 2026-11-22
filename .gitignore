@@ -1,6 +1,13 @@
 
+# Python bytecode caches
+__pycache__/
+
 # Local simulator opponents and downloaded review archives
 /opponents/
 /competitors/
 /mech-testing/
 /mech-competitor-review.zip
+
+# Local reference material and comparison history
+/.local-reference/
+/local-references/

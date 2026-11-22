@@ -1,0 +1,214 @@
+{
+  "stage": "screen",
+  "builds": {
+    "A": "1e3a6d9e02cb980d3bde15d6afd4a5dbb44d07c91376450b26f6c3753c114500",
+    "B": "6a4166c11c929407325fe09ad7704c937ccba1dd6db29098404e83b0e1d06b3c",
+    "C": "4185094a4d57f7426af4fe87b63e024685f9555b4d59f832976d2060af3d81cd"
+  },
+  "context": {
+    "sim": "71f4e70796d5b20777951d0317edf4bdfaf76fc1fdfc8dff50dc5281e4517be8",
+    "kit": "023ed220514f29dda9389ccd4643625ffc7aa494569d18c28098553bb2a315bc",
+    "tools": "453da278ff0775ca7f46f2b3680984c7552ca05c34d3d6240785cd0cc471abc6"
+  },
+  "spec": {
+    "A": {
+      "root": "..",
+      "env": {},
+      "hypothesis": "Current default reference"
+    },
+    "B": {
+      "root": "..",
+      "env": {
+        "BOT_SQUAD_RECOVERY": "cover"
+      },
+      "hypothesis": "Existing recovery option reduces incoming pressure at low health"
+    },
+    "C": {
+      "root": "..",
+      "env": {
+        "BOT_SQUAD_POSITION": "cover"
+      },
+      "hypothesis": "Existing secondary-threat cover option reduces simultaneous incoming fire"
+    }
+  },
+  "seed_start": 422100,
+  "seeds": 15,
+  "compile_seconds": 0.517334625,
+  "geometry_sha256": "e8406946eb1c39fb861879f776503dd22bb45873158859d7c0f816c1df5e0d4c",
+  "parent_report_sha256": null,
+  "summaries": {
+    "A": {
+      "mean": 5.533333333333333,
+      "matches": 15,
+      "kills": 3.2,
+      "survival_s": 200.01,
+      "late": 0,
+      "invalid": 0
+    },
+    "B": {
+      "mean": 5.533333333333333,
+      "matches": 15,
+      "kills": 3.1333333333333333,
+      "survival_s": 208.34666666666666,
+      "late": 5,
+      "invalid": 5
+    },
+    "C": {
+      "mean": 5.133333333333334,
+      "matches": 15,
+      "kills": 2.6666666666666665,
+      "survival_s": 204.66,
+      "late": 3,
+      "invalid": 3
+    }
+  },
+  "comparisons": {
+    "B-A": {
+      "delta": 0,
+      "median": 0,
+      "sd": 2.138089935299395,
+      "se": 0.5520524474738834,
+      "pairs": 15,
+      "win_fraction": 0.2,
+      "per_seed": {
+        "422100": 0,
+        "422101": -2,
+        "422102": -1,
+        "422103": 0,
+        "422104": 0,
+        "422105": 4,
+        "422106": 0,
+        "422107": 0,
+        "422108": -5,
+        "422109": 0,
+        "422110": 1,
+        "422111": -1,
+        "422112": 0,
+        "422113": 0,
+        "422114": 4
+      },
+      "bootstrap95": [
+        -1,
+        1
+      ],
+      "worst_regressions": [
+        [
+          422108,
+          -5
+        ],
+        [
+          422101,
+          -2
+        ],
+        [
+          422102,
+          -1
+        ]
+      ],
+      "mean_metric_deltas": {
+        "kills": -0.06666666666666667,
+        "game_seconds": 8.336666666666664,
+        "terminal_cubes": 0.3333333333333333,
+        "incoming_damage": 289.74241238689376
+      }
+    },
+    "C-A": {
+      "delta": -0.4,
+      "median": 0,
+      "sd": 1.8439088914585775,
+      "se": 0.47609522856952335,
+      "pairs": 15,
+      "win_fraction": 0.2,
+      "per_seed": {
+        "422100": 0,
+        "422101": -1,
+        "422102": -2,
+        "422103": -1,
+        "422104": -4,
+        "422105": 0,
+        "422106": 0,
+        "422107": 0,
+        "422108": -3,
+        "422109": 0,
+        "422110": 1,
+        "422111": 0,
+        "422112": 4,
+        "422113": -1,
+        "422114": 1
+      },
+      "bootstrap95": [
+        -1.2666666666666666,
+        0.5333333333333333
+      ],
+      "worst_regressions": [
+        [
+          422104,
+          -4
+        ],
+        [
+          422108,
+          -3
+        ],
+        [
+          422102,
+          -2
+        ]
+      ],
+      "mean_metric_deltas": {
+        "kills": -0.5333333333333333,
+        "game_seconds": 4.649999999999998,
+        "terminal_cubes": 0,
+        "incoming_damage": 380.8721681623021
+      }
+    },
+    "B-C": {
+      "delta": 0.4,
+      "median": 0,
+      "sd": 2.1313979316066587,
+      "se": 0.550324579550235,
+      "pairs": 15,
+      "win_fraction": 0.4,
+      "per_seed": {
+        "422100": 0,
+        "422101": -1,
+        "422102": 1,
+        "422103": 1,
+        "422104": 4,
+        "422105": 4,
+        "422106": 0,
+        "422107": 0,
+        "422108": -2,
+        "422109": 0,
+        "422110": 0,
+        "422111": -1,
+        "422112": -4,
+        "422113": 1,
+        "422114": 3
+      },
+      "bootstrap95": [
+        -0.6666666666666666,
+        1.4
+      ],
+      "worst_regressions": [
+        [
+          422112,
+          -4
+        ],
+        [
+          422108,
+          -2
+        ],
+        [
+          422101,
+          -1
+        ]
+      ],
+      "mean_metric_deltas": {
+        "kills": 0.4666666666666667,
+        "game_seconds": 3.6866666666666674,
+        "terminal_cubes": 0.3333333333333333,
+        "incoming_damage": -91.12975577540827
+      }
+    }
+  }
+}

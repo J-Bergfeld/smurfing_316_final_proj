@@ -3,5 +3,8 @@ arena
 check
 tests
 competitors
+.local-reference
 __pycache__
 *.pyc
+mech-testing
+local-references

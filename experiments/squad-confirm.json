@@ -1,0 +1,14 @@
+{
+  "A": {
+    "root": "..",
+    "env": {},
+    "hypothesis": "Current default reference"
+  },
+  "B": {
+    "root": "..",
+    "env": {
+      "BOT_SQUAD_RECOVERY": "cover"
+    },
+    "hypothesis": "Existing recovery option reduces incoming pressure at low health"
+  }
+}

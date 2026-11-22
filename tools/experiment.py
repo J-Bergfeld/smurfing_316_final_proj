@@ -32,7 +32,9 @@ def provenance(bot):
     diff = subprocess.check_output(['git', 'diff', 'HEAD', '--binary'], cwd=ROOT)
     dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True))
     digest = hashlib.sha256()
-    files = [bot] + sorted((bot.parent/'bot').glob('*.py')) if (bot.parent/'bot').is_dir() else [bot]
+    files = ([bot] + sorted(p for p in (bot.parent/'bot').iterdir()
+                            if p.is_file() and p.suffix in ('.py', '.json', '.gz'))
+             if (bot.parent/'bot').is_dir() else [bot])
     if (bot.parent/'mechfight.py').is_file(): files.append(bot.parent/'mechfight.py')
     for path in files:
         digest.update(str(path.relative_to(bot.parent)).encode()+b'\0'+path.read_bytes())
@@ -44,10 +46,11 @@ def verify_revision(bot, revision):
     """Confirm the external checkout's Python runtime matches a local commit."""
     commit = subprocess.check_output(['git', 'rev-parse', '--verify', revision+'^{commit}'], cwd=ROOT, text=True).strip()
     tracked = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', commit, '--', 'main.py', 'mechfight.py', 'bot/'], cwd=ROOT, text=True).splitlines()
-    files = [name for name in tracked if name.endswith('.py')]
+    files = [name for name in tracked if name.endswith(('.py', '.json', '.gz'))]
     if bot.name != 'main.py' or 'main.py' not in files:
         raise ValueError('revision verification requires the root main.py')
-    actual = {'main.py', *(str(p.relative_to(bot.parent)) for p in (bot.parent/'bot').glob('*.py'))}
+    actual = {'main.py', *(str(p.relative_to(bot.parent)) for p in (bot.parent/'bot').iterdir()
+                            if p.is_file() and p.suffix in ('.py', '.json', '.gz'))}
     if (bot.parent/'mechfight.py').is_file(): actual.add('mechfight.py')
     if actual != set(files): raise ValueError('bot runtime files do not match the revision')
     for name in files:
@@ -66,13 +69,26 @@ def summarize(rows):
 
 
 def compare(base, candidate):
-    b = {r['seed']: r['points'] for r in base}
-    c = {r['seed']: r['points'] for r in candidate}
-    if b.keys() != c.keys():
-        raise ValueError('paired variants must have identical seeds')
-    diffs = [c[seed]-b[seed] for seed in sorted(b)]
-    sem = statistics.stdev(diffs)/math.sqrt(len(diffs)) if len(diffs) > 1 else None
-    return {'delta': statistics.mean(diffs), 'se': sem, 'pairs': len(diffs)}
+    b = {r['seed']: r for r in base}
+    c = {r['seed']: r for r in candidate}
+    if not b or len(b) != len(base) or len(c) != len(candidate) or b.keys() != c.keys():
+        raise ValueError('paired variants must have identical, unique, nonempty seeds')
+    for seed in b:
+        if b[seed].get('initial_layout_sha256') != c[seed].get('initial_layout_sha256'):
+            raise ValueError(f'starting layout differs for seed {seed}')
+    per_seed = {s:c[s]['points']-b[s]['points'] for s in sorted(b)}
+    diffs = list(per_seed.values())
+    sd = statistics.stdev(diffs) if len(diffs) > 1 else None
+    if __package__:
+        from .diagnose import bootstrap_mean
+    else:
+        from diagnose import bootstrap_mean
+    return dict(delta=statistics.mean(diffs), median=statistics.median(diffs), sd=sd,
+                se=sd/math.sqrt(len(diffs)) if sd is not None else None, pairs=len(diffs),
+                win_fraction=sum(d>0 for d in diffs)/len(diffs), per_seed=per_seed,
+                bootstrap95=bootstrap_mean(diffs) if sd is not None else None,
+                worst_regressions=sorted(((s,d) for s,d in per_seed.items() if d<0),
+                                         key=lambda pair:pair[1])[:3])
 
 
 def interactions(variants):

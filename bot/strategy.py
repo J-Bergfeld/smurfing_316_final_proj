@@ -1,6 +1,7 @@
 """Mode selection, positioning and inventory decisions."""
 import math
 import os
+import time
 from .geometry import distance, angle_diff
 from .positioning import Positioner
 from .loadout import pickup_slot
@@ -28,6 +29,8 @@ class Strategy:
         self.range_engagement = os.getenv('BOT_RANGE_ENGAGEMENT', 'off') == 'on'
         self.range_matchup = os.getenv('BOT_RANGE_MATCHUP', 'on') == 'on'
         if self.range_matchup: self.positioner.range_position = True
+        self.active_threats = os.getenv('BOT_THREAT_MODEL', 'legacy') == 'active'
+        self.practice_economy = os.getenv('BOT_ECONOMY', 'legacy') == 'adaptive'
 
     def choose(self, world):
         obs = world.obs; me = obs['self']; now = obs['t']; enemies = world.enemies()
@@ -37,12 +40,16 @@ class Strategy:
             actor=track['actor']; p=me['pos']; pos=actor['pos']
             bearing=math.atan2(p[1]-pos[1],p[0]-pos[0])
             facing=abs(angle_diff(actor.get('aim',[bearing])[0],bearing)) < .25
-            return now-world.attackers.get(actor['id'],-1000) < 6 or (track['visible'] and facing and distance(p,pos)<160)
+            if not self.active_threats:
+                return now-world.attackers.get(actor['id'],-1000) < 6 or (track['visible'] and facing and distance(p,pos)<160)
+            d=distance(p,pos); vel=actor.get('vel',[0,0,0]); myvel=me.get('vel',[0,0,0])
+            closing=((vel[0]-myvel[0])*(p[0]-pos[0])+(vel[1]-myvel[1])*(p[1]-pos[1]))/max(1,d)
+            return now-world.attackers.get(actor['id'],-1000) < 6 or (track['visible'] and (d<60 or (facing and d<160) or (closing>3 and d<180)))
         def target_cost(track):
             actor = track['actor']
             return (distance(me['pos'],actor['pos'])*.5 + actor.get('hp',1400)*.09
                     + (0 if track['visible'] else 60) - (15 if actor['id']==self.target_id else 0)
-                    - (35 if self.hunter_model and world.field != 'ffa' and is_hunter(track) else 0))
+                    - (35 if (self.hunter_model or self.active_threats) and world.field != 'ffa' and is_hunter(track) else 0))
         previous_target = self.target_id
         closest = min(enemies,key=target_cost,default=None)
         close_visible = [e for e in enemies if e['visible'] and distance(me['pos'],e['actor']['pos']) < 45]
@@ -63,7 +70,8 @@ class Strategy:
         # Target preference may favor a weak enemy farther away; do not let it
         # hide a different opponent who is an immediate danger.
         react_range = engagement_range(me,self.config) if self.range_engagement else 160
-        visible_threat = any(e['visible'] and distance(me['pos'],e['actor']['pos']) < react_range for e in enemies)
+        visible_threat = any(e['visible'] and distance(me['pos'],e['actor']['pos']) < react_range and
+                             (not self.active_threats or world.field == 'ffa' or is_hunter(e)) for e in enemies)
         nearby_count = sum(distance(me['pos'],e['actor']['pos'])<220 and e['confidence']>.3 and (not self.hunter_model or world.field == 'ffa' or is_hunter(e)) for e in enemies)
         engaged = bool(closest and ((self.mode=='attack' and previous_target==closest['actor']['id']) or (recent and world.last_damage_by==closest['actor']['id'])))
         ratio = self.combat.estimate(me,closest['actor'],nearby_count,engaged=engaged) if closest else 0
@@ -88,7 +96,7 @@ class Strategy:
             if not ffa and closest and closest['visible'] and d < 175 and hp > .4 and close_count <= 1:
                 threshold *= .65
             proposed = 'attack' if (finish or ratio > threshold) and not third_party else 'flee'
-        elif me['hp'] < me['max_hp']*.9 and me.get('in_zone',True) and not projectile_threat: proposed = 'recover'
+        elif me['hp'] < me['max_hp']*(.5 if self.practice_economy and world.field == 'squad' else .9) and me.get('in_zone',True) and not projectile_threat: proposed = 'recover'
         elif world.loot or obs.get('drops') or any(t['visible'] and t['actor']['kind']=='npc' and distance(me['pos'],t['actor']['pos'])<110 for t in world.tracks.values()): proposed = 'loot'
         else: proposed = 'hold'
         if self.range_matchup and proposed == 'attack' and closest and closest['visible']:

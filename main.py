@@ -1,4 +1,4 @@
-"""Mech Royale entrypoint. Set BOT_PROFILE=final for free-for-all policy."""
+"""Mech Royale entrypoint; the packaged integrated controller is practice-only."""
 import math
 import os
 import mechfight
@@ -6,6 +6,7 @@ from bot.geometry import Map, distance
 from bot.world import World
 from bot.combat import Combat
 from bot.strategy import Strategy
+from bot.controller import Controller
 from bot.navigation import NavigationGraph
 from bot.tactics import dodge, blend_dodge
 
@@ -14,12 +15,18 @@ class Bot:
     name = 'botted-out'
 
     def __init__(self, hello):
+        self.integrated_policy = os.environ.get('BOT_POLICY', 'integrated') != 'legacy'
+        if self.integrated_policy:
+            self.strategy = Controller(hello)
+            return
         config = hello['config']; self.arena = Map(hello['map']['dir'])
         self.navigation = NavigationGraph(self.arena, config)
         self.world = World(config,self.arena); self.combat = Combat(config)
         self.strategy = Strategy(self.arena,self.combat,config,os.environ.get('BOT_PROFILE','adaptive'),self.navigation)
 
     def act(self, obs):
+        if getattr(self, 'integrated_policy', False):
+            return self.strategy.act(obs)
         self.world.update(obs); mode, enemy, urgent = self.strategy.choose(self.world)
         goal = self.strategy.goal_for(self.world,mode,enemy,urgent)
         action = self.strategy.movement(self.world,goal,urgent,mode,enemy)
@@ -31,7 +38,8 @@ class Bot:
         action.update(self.strategy.inventory(self.world))
         target = enemy if enemy and (mode=='attack' or (mode=='flee' and distance(obs['self']['pos'],enemy['actor']['pos'])<110)) else None
         capturing = any(drop.get('lands_in',0)<=0 and distance(obs['self']['pos'],drop['pos']) < drop.get('radius',8) for drop in obs.get('drops', []))
-        if mode=='loot' and target is None and not capturing and obs['self']['hp'] >= .7*obs['self']['max_hp']:
+        farm_health = .5 if getattr(self.strategy,'practice_economy',False) and self.world.field == 'squad' else .7
+        if mode=='loot' and target is None and not capturing and obs['self']['hp'] >= farm_health*obs['self']['max_hp']:
             p=obs['self']['pos']; origin=[p[0],p[1],p[2]+obs['self'].get('stats',{}).get('muzzle_height',7)]
             farm = [dict(crate,kind='crate',vel=[0,0,0]) for crate in obs.get('crates', [])]
             farm += [actor for actor in obs.get('mechs', []) if actor.get('kind')=='npc']

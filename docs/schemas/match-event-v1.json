@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Local match telemetry event v1",
+  "type": "object",
+  "required": ["v", "tick", "t", "origin", "kind"],
+  "properties": {
+    "v": {"const": 1},
+    "tick": {"type": "integer", "minimum": 0},
+    "t": {"type": "number", "minimum": 0},
+    "origin": {"enum": ["wire", "simulator"]},
+    "kind": {"enum": ["sample", "event", "phase", "end"]},
+    "phase": {"type": "integer", "minimum": 0},
+    "alive": {"type": "boolean"},
+    "fatal_weapon": {"type": ["string", "null"]},
+    "fatal_source": {"type": ["integer", "null"]},
+    "event": {"type": "object", "required": ["type"], "properties": {"type": {"type": "string"}}},
+    "pos": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}},
+    "hp": {"type": "number"},
+    "max_hp": {"type": "number"},
+    "cubes": {"type": "integer"},
+    "energy": {"type": "number"},
+    "in_zone": {"type": "boolean"},
+    "mech_ids": {"type": "array", "items": {"type": "integer"}},
+    "move": {"type": ["array", "null"], "minItems": 2, "maxItems": 2, "items": {"type": "number"}},
+    "fire": {"type": ["array", "null"], "minItems": 2, "maxItems": 2, "items": {"type": "boolean"}}
+  },
+  "oneOf": [
+    {"properties": {"kind": {"const": "sample"}, "origin": {"const": "wire"}}, "required": ["pos", "hp", "max_hp", "energy", "cubes", "upgrades", "weapons", "in_zone", "mech_ids", "cube_options", "move", "fire"]},
+    {"properties": {"kind": {"const": "event"}}, "required": ["event"]},
+    {"properties": {"kind": {"const": "phase"}, "origin": {"const": "simulator"}}, "required": ["phase"]},
+    {"properties": {"kind": {"const": "end"}, "origin": {"const": "simulator"}}, "required": ["alive", "phase", "fatal_weapon", "fatal_source", "hp", "cubes", "upgrades", "weapons"]}
+  ]
+}

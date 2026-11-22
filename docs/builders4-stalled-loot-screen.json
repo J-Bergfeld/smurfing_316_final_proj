@@ -1,0 +1,121 @@
+{
+  "stage": "screen",
+  "builds": {
+    "A": "1a3146c8788e65461b8355dae1e0a79ef2c0b68288d4d0221984dbe7c8f6a5e2",
+    "B": "3ff9f76beba1cda66ece37c9514f6f3ac64fabe3991d28d9c68798cbf07584b5"
+  },
+  "context": {
+    "sim": "71f4e70796d5b20777951d0317edf4bdfaf76fc1fdfc8dff50dc5281e4517be8",
+    "kit": "023ed220514f29dda9389ccd4643625ffc7aa494569d18c28098553bb2a315bc",
+    "tools": "453da278ff0775ca7f46f2b3680984c7552ca05c34d3d6240785cd0cc471abc6"
+  },
+  "spec": {
+    "A": {
+      "root": "..",
+      "env": {
+        "BOT_POLICY": "integrated",
+        "BOT_NAV_METHOD": "legacy",
+        "BOT_GUN_AIM_CHECK": "actual",
+        "BOT_AIM_MODEL": "dev",
+        "BOT_SUPPLY_DROPS": "0",
+        "BOT_CORNER_DUEL": "1",
+        "BOT_POSITIONAL_FIELD": "1",
+        "BOT_FIGHT_CORRIDOR": "0",
+        "BOT_EARLY_DRONE": "0",
+        "BOT_SAFE_COMBAT_CUBES": "0",
+        "BOT_OPENING_SCAN": "0",
+        "BOT_ABANDON_STALLED_LOOT": "0"
+      },
+      "hypothesis": "955e6bf gameplay configuration"
+    },
+    "B": {
+      "root": "..",
+      "env": {
+        "BOT_POLICY": "integrated",
+        "BOT_NAV_METHOD": "legacy",
+        "BOT_GUN_AIM_CHECK": "actual",
+        "BOT_AIM_MODEL": "dev",
+        "BOT_SUPPLY_DROPS": "0",
+        "BOT_CORNER_DUEL": "1",
+        "BOT_POSITIONAL_FIELD": "1",
+        "BOT_FIGHT_CORRIDOR": "0",
+        "BOT_EARLY_DRONE": "0",
+        "BOT_SAFE_COMBAT_CUBES": "0",
+        "BOT_OPENING_SCAN": "0",
+        "BOT_ABANDON_STALLED_LOOT": "1"
+      },
+      "hypothesis": "Temporarily abandon loot when navigation repeatedly produces no movement"
+    }
+  },
+  "seed_start": 422700,
+  "seeds": 16,
+  "compile_seconds": 0.53672025,
+  "geometry_sha256": "75a8a4c4332b0e1ae1c9ee39ab81dfb83ef935ee22c092799b0ddaa07d1c465a",
+  "parent_report_sha256": null,
+  "summaries": {
+    "A": {
+      "mean": 5.8125,
+      "matches": 16,
+      "kills": 3.3125,
+      "survival_s": 217.984375,
+      "late": 2,
+      "invalid": 2
+    },
+    "B": {
+      "mean": 5.875,
+      "matches": 16,
+      "kills": 3.25,
+      "survival_s": 212.490625,
+      "late": 0,
+      "invalid": 0
+    }
+  },
+  "comparisons": {
+    "B-A": {
+      "delta": 0.0625,
+      "median": 0.0,
+      "sd": 1.4361406616345072,
+      "se": 0.3590351654086268,
+      "pairs": 16,
+      "win_fraction": 0.1875,
+      "per_seed": {
+        "422700": 0,
+        "422701": 4,
+        "422702": 0,
+        "422703": 0,
+        "422704": 0,
+        "422705": -2,
+        "422706": 1,
+        "422707": 0,
+        "422708": 0,
+        "422709": 0,
+        "422710": 0,
+        "422711": 0,
+        "422712": 1,
+        "422713": -3,
+        "422714": 0,
+        "422715": 0
+      },
+      "bootstrap95": [
+        -0.5625,
+        0.8125
+      ],
+      "worst_regressions": [
+        [
+          422713,
+          -3
+        ],
+        [
+          422705,
+          -2
+        ]
+      ],
+      "mean_metric_deltas": {
+        "kills": -0.0625,
+        "game_seconds": -5.493749999999996,
+        "terminal_cubes": 0.8125,
+        "incoming_damage": -266.4905000000003
+      }
+    }
+  }
+}

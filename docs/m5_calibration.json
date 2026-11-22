@@ -1,0 +1,87 @@
+{
+  "n": 5,
+  "builds": [
+    {
+      "build": "17d4a602946029d1470ab5a9c89c42862175e8d73be543a0362fc7a73ac3b64f",
+      "local": 4.8,
+      "official": 5.06,
+      "repeats": 1,
+      "official_minus_local": 0.2599999999999998,
+      "revision": "37d1a1d3088559d35bf4140bfa6bcde12061d1b3",
+      "label": "37d1a1d",
+      "loo_official_estimate": 5.9624999999999995,
+      "loo_residual": -0.9024999999999999
+    },
+    {
+      "build": "453532dd0720ac796c52c06399a566f0e0b2f65b4f23e250c45707ef83527666",
+      "local": 3.2,
+      "official": 5.17,
+      "repeats": 1,
+      "official_minus_local": 1.9699999999999998,
+      "revision": "4991fa605bce4de1ba4d204ced8b6152ab8d1fef",
+      "label": "4991fa6",
+      "loo_official_estimate": 3.935,
+      "loo_residual": 1.2349999999999999
+    },
+    {
+      "build": "88f826b5287111faa8c03fc1e8e6489af74d2b012cea61330bc3086252ad5353",
+      "local": 5.6,
+      "official": 5.17,
+      "repeats": 1,
+      "official_minus_local": -0.4299999999999997,
+      "revision": "c5aeebba81a5b7c592f4093a38d913514e1c01ac",
+      "label": "c5aeebb",
+      "loo_official_estimate": 6.934999999999999,
+      "loo_residual": -1.7649999999999988
+    },
+    {
+      "build": "a23a4e3f0f84d86f1c32b42a9b30985f884f3a52b70a7d5be5206d7da51b7eb0",
+      "local": 3.2,
+      "official": 5.1,
+      "repeats": 1,
+      "official_minus_local": 1.8999999999999995,
+      "revision": "fb8509717ec48667a9a5d49caad256e5c0ef2a69",
+      "label": "fb85097",
+      "loo_official_estimate": 3.9525,
+      "loo_residual": 1.1474999999999995
+    },
+    {
+      "build": "c24d906173692e42f6dacd7d9e5329783674be020566ef3dcd15f984f48c616b",
+      "local": 3.6,
+      "official": 4.81,
+      "repeats": 1,
+      "official_minus_local": 1.2099999999999995,
+      "revision": "ded4a9cc1d9d2e0bc80d6e2f740d4edea636cd04",
+      "label": "ded4a9c",
+      "loo_official_estimate": 4.525,
+      "loo_residual": 0.28499999999999925
+    }
+  ],
+  "bias": 0.9819999999999998,
+  "mae": 1.1539999999999997,
+  "inversions": [
+    [
+      "453532dd0720ac796c52c06399a566f0e0b2f65b4f23e250c45707ef83527666",
+      "17d4a602946029d1470ab5a9c89c42862175e8d73be543a0362fc7a73ac3b64f"
+    ],
+    [
+      "a23a4e3f0f84d86f1c32b42a9b30985f884f3a52b70a7d5be5206d7da51b7eb0",
+      "17d4a602946029d1470ab5a9c89c42862175e8d73be543a0362fc7a73ac3b64f"
+    ],
+    [
+      "c24d906173692e42f6dacd7d9e5329783674be020566ef3dcd15f984f48c616b",
+      "453532dd0720ac796c52c06399a566f0e0b2f65b4f23e250c45707ef83527666"
+    ],
+    [
+      "c24d906173692e42f6dacd7d9e5329783674be020566ef3dcd15f984f48c616b",
+      "a23a4e3f0f84d86f1c32b42a9b30985f884f3a52b70a7d5be5206d7da51b7eb0"
+    ]
+  ],
+  "loo_mae": 1.0669999999999995,
+  "loo_official_mean_mae": 0.12699999999999995,
+  "pearson": 0.24333485401928562,
+  "spearman": -0.02631578947368421,
+  "panel": "2e8dcd67b660399e8fc992bbd0f3370b0d592488845303bf434c2b960c865699",
+  "cohort": "reported-practice-version-unknown",
+  "historical": true
+}

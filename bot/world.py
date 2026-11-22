@@ -124,3 +124,38 @@ class World:
         for s in self.sounds:
             value += .18 * max(0, 1-distance(pos,s['pos'])/130) * max(0,1-(self.obs['t']-s['time'])/4)
         return value + self.projectile_risk(pos) * 1.5
+
+
+def update_perception(state,obs):
+    t=obs['t']; me=obs['self']; p=me['pos']; muzzle=(p[0],p[1],p[2]+me['stats']['muzzle_height'])
+    for actor in obs.get('mechs',[]):
+        height=state.cfg['npc']['height'] if actor['kind']=='npc' else state.cfg['mech']['height']*(1+actor.get('cubes',0)*state.cfg['cubes'].get('size_per_cube',.05))
+        center=(actor['pos'][0],actor['pos'][1],actor['pos'][2]+height*.5)
+        los=state.world.shot_clear(muzzle,center)
+        if not los and actor['kind']=='mech': los=state.world.shot_clear(muzzle,(*actor['pos'][:2],actor['pos'][2]+height*.85))
+        state.tracks[actor['id']]={'actor':actor,'seen':t,'los':los}
+    state.tracks={k:v for k,v in state.tracks.items() if t-v['seen']<=(120 if v['actor']['kind']=='npc' else 20)}
+    for typ in ('crates','cubes','pickups'):
+        seen={item['id'] for item in obs.get(typ,[])}
+        for item in obs.get(typ,[]): state.items[item['id']]=(typ,item,t)
+        for ident,(kind,item,when) in list(state.items.items()):
+            if kind!=typ or ident in seen or t-when<=.35 or math.dist(p[:2],item['pos'][:2])>=40: continue
+            eye=(p[0],p[1],p[2]+me['stats']['eye_height']); at=(*item['pos'][:2],item['pos'][2]+1.5)
+            if state.world.shot_clear(eye,at): del state.items[ident]
+    for event in obs.get('events',[]):
+        if event['type']=='damaged' and event.get('by') is not None:
+            state.last_hurt=t
+            state.attacker_memory[event['by']]=t
+            if event['by'] in state.tracks: state.hits[event['by']]=t
+            if event.get('bearing') is not None: state.hurt_bearing=event['bearing']
+        if event['type']=='damaged' and event.get('weapon')=='npc':
+            state.npc_hurt=t; state.npc_id=event.get('by'); state.npc_bearing=event.get('bearing')
+        elif event['type']=='kill':
+            state.kills.add(event['target']); state.tracks.pop(event['target'],None)
+        elif event['type'] in ('took','take_failed'):
+            state.items.pop(event.get('id'),None)
+    state.attacker_memory={ident:when for ident,when in state.attacker_memory.items() if t-when<8}
+    if state.initial is None: state.initial=obs['alive']
+    z=obs['zone']
+    if state.phase!=z['shrink_start'] or t<=z['shrink_start']:
+        state.phase=z['shrink_start']; state.hold=(*z['center'],z['radius'])
