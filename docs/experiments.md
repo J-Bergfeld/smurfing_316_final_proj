@@ -6,7 +6,19 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 The packaged Python controller starts in practice mode on tick one. Movement, target selection, firing and loadout share the same perception and routing code with FFA. The first uncredited decrease in the alive count selects FFA actions immediately. Five consecutive observations with a discrepancy lock in FFA. An explicit `BOT_PROFILE=final` selects FFA throughout. Compare official placement against `835d4a7` (5.23).
 
-Two 600-observation replay slices with clocks shifted to select practice for both policies matched firing on all 1,200 decisions and movement within 0.2 vector distance on 1,199. In an unmodified 2,691-tick recording, the overlapping practice interval matched firing on 1,762/1,762 ticks and movement on 1,674/1,762. The packaged protocol check answered 299/300 observations within 50 ms, with one late response. Official placement is pending.
+Two 600-observation replay slices with clocks shifted to select practice for both policies matched firing on all 1,200 decisions and movement within 0.2 vector distance on 1,199. In an unmodified 2,691-tick recording, the overlapping practice interval matched firing on 1,762/1,762 ticks and movement on 1,674/1,762. The packaged protocol check answered 299/300 observations within 50 ms, with one late response. The user reported **5.00** for `8d52f44`.
+
+## Active attacker priority
+
+Commit `4933656` restored the packaged `835d4a7` policy and increased the practice target-selection bonus for a recent attacker from 40 to 160, retaining the near-lethal bonus. It passed the baseline's 102 tests and the restricted Docker protocol check (300/300 on-time replies). The user reported an official score of **4.90**, compared with 5.23 for `835d4a7`. This aggregate result does not establish causality, but does not justify retaining the trial; restore the 5.23 target weighting. Run ID, timestamp and scorer version were not supplied.
+
+## Laser timing trial
+
+On the `835d4a7` policy, `BOT_LASER_TIMING=reload` delays starting a laser charge in practice while the gun has ammunition, is not reloading and can reach the target. An already started charge completes; FFA behavior is unchanged. The hypothesis is that moving at full speed and keeping the shared torso on gun aim between reloads compensates for fewer laser shots. The counter-hypothesis is that losing laser damage makes fights longer. Across five old proxy traces, 382 observations had a visible or tracked mech, a loaded gun and a laser already charging; these are not official matches and do not measure missed shots.
+
+Eight counterbalanced proxy pairs on seeds 422600–422607 averaged 5.875 for the baseline and 6.25 for the trial, paired difference +0.375 (95% bootstrap interval −0.625 to +1.50), with three improved, three tied and two worse. Mean kills fell by 0.25 and survival rose by 10.9 seconds. Baseline had four late/invalid replies; trial had two. A protocol check ran concurrently during part of the panel, adding possible load confounding. This screen is small and cannot predict official score; the local proxy has poor historical calibration. Raw results: `mech-testing/laser-reload-screen-422600/report.json` (git-ignored). Official score is pending.
+
+The focused weapon checks covered a loaded gun, reload, a charge already in progress and FFA. The baseline's 102-test suite passed with the factor enabled. The packaged restricted-container protocol replay answered 300/300 on time (maximum 31.3 ms).
 
 ## Isolated wounded opponent trial
 
@@ -20,6 +32,8 @@ Ten focused behavior checks passed. The packaged protocol check passed with 298 
 
 | Commit / settings | Score | Squad-proxy mean / official minus proxy | Status / provenance |
 | --- | ---: | --- | --- |
+| `4933656`, active attacker priority | 4.90 | — | User-reported official practice score; restore the `835d4a7` target weighting. |
+| `8d52f44`, dedicated practice policy | 5.00 | — | User-reported official practice score. |
 | `6d086c3`, reload behind cover | 5.19 | — | User-reported official practice score. Finished 0.04 below the `835d4a7` positional-field baseline. |
 | `67f32ba`, finish approach | 5.08 | — | User-reported official practice score. |
 | `835d4a7`, positional field | **5.23** | — | User-reported official practice score. Retained as the baseline for the finish approach trial. |

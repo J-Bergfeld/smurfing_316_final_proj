@@ -1,0 +1,4 @@
+{
+  "A": {"root":"..", "env":{"BOT_NAV_METHOD":"legacy","BOT_GUN_AIM_CHECK":"actual","BOT_SUPPLY_DROPS":"0","BOT_CORNER_DUEL":"1","BOT_POSITIONAL_FIELD":"1"}, "hypothesis":"5.23 baseline settings"},
+  "B": {"root":"..", "env":{"BOT_NAV_METHOD":"legacy","BOT_GUN_AIM_CHECK":"actual","BOT_SUPPLY_DROPS":"0","BOT_CORNER_DUEL":"1","BOT_POSITIONAL_FIELD":"1","BOT_LASER_TIMING":"reload"}, "hypothesis":"Start laser charging when the gun is unavailable, reducing shared-aim conflicts and slowed movement"}
+}

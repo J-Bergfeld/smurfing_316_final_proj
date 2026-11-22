@@ -203,6 +203,13 @@ def aim_and_fire(me, target, config, squad=False, world=None):
             fire[i]=bool(dist<s['range']-1.5 and ey(hy)<math.radians(s['cone_deg'])*.5-.05 and me['energy']>=s['energy'])
         elif wk=='laser' and kind=='mech' and dist<=s['range']*.97:
             charge=w.get('charge',0); full=s['charge']; lethal=False
+            # Do not start a new charge over an available gun magazine in the
+            # reload-only trial. Finish any charge already started; dropping
+            # the trigger would release a weak shot instead of cancelling it.
+            if (squad and os.getenv('BOT_LASER_TIMING') == 'reload'
+                    and charge <= 0 and gun and gun.get('ammo', 0) > 0
+                    and gun.get('reload', 0) <= 0 and dist <= gun['stats']['range'] * .96):
+                continue
             if squad and s['min_charge']<=charge<full-.051:
                 count=min(me['cubes'],config['cubes']['stat_cap'])
                 damage=s['damage']*(s['min_frac']+(1-s['min_frac'])*charge/full)*(1+config['cubes']['damage_per_cube']*count)
@@ -254,10 +261,7 @@ def assess_combat(state, obs, squad, late, hp):
         cost=d+(.18 if squad else 60/1400)*a.get('hp',1400)
         if squad and a['id']==state.target_id and t-state.target_at<2: cost-=200
         if squad and a.get('hp',1400)<=.3*a.get('max_hp',1400): cost-=200
-        # A current attacker can keep dealing damage while we chase an older
-        # target. Favor returning fire, but preserve the near-lethal bonus and
-        # enough hysteresis to avoid switching on every stray hit.
-        if recent: cost-=160 if squad else 40
+        if recent: cost-=40
         if closing>3: cost-=15
         choices.append((cost,a['id'],a))
     target=min(choices,default=(0,0,None))[2]
