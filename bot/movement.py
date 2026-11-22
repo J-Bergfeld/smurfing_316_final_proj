@@ -225,7 +225,7 @@ class Movement:
         me=obs['self']; p=me['pos']; pos=target['pos']; d=math.dist(p[:2],pos[:2]); weapons={w['kind'] for w in me['weapons'] if w}
         desired=58 if target['kind']=='npc' else (28 if 'lightning' in weapons and me['energy']>12 else (120 if 'laser' in weapons and squad else 85))
         if aggressive and squad and target['kind']=='mech' and 'gun' in weapons and not weapons.intersection({'laser','lightning'}) and want_los>0:
-            desired=82
+            desired=83
         if 'lightning' not in weapons:
             if 'lightning' in target.get('weapons',[]): desired=max(desired,64)
             if 'mortar' in target.get('weapons',[]): desired=max(desired,80)
