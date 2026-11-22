@@ -111,7 +111,7 @@ class Controller:
             if (not squad or self.squad_cover) and not hot and any(a.get('charging') and abs(angle_diff(a['aim'][0],math.atan2(p[1]-a['pos'][1],p[0]-a['pos'][0])))<.3 for a in seen): want_los=-1.6
             action['move']=self.movement.combat_move(obs,foe,seen,squad,want_los,self.items,aggressive=True); mode='fight'
             if squad and not (self.farming_policy in ('selective','cubes') and danger):
-                radius=60 if hp>.5 else 70*.57
+                radius=70 if hp>.5 else 70*.57
                 cubes=[item for kind,item,_ in self.items.values() if kind=='cubes' and math.dist(p[:2],item['pos'][:2])<radius]
                 if cubes:
                     cube=min(cubes,key=lambda item:math.dist(p[:2],item['pos'][:2])); action['move']=self.movement.navigate(me,cube['pos'],t); mode='fight:cube'
@@ -164,6 +164,14 @@ class Controller:
                 action['move'] = step
                 mode = 'fight-corridor'
         self.movement.apply_evasion_and_recovery(obs,action,mode)
+        if (mode=='fight' and squad and not self.retreat and not action['jump'] and me['grounded'] and hp>.7
+                and me['energy']>60 and target is not None):
+            gun=next((w for w in me['weapons'] if w and w['kind']=='gun'),None)
+            dx=target['pos'][0]-p[0]; dy=target['pos'][1]-p[1]; distance=math.hypot(dx,dy)
+            move=action['move']; speed=math.hypot(*move)
+            if (100<distance<130 and gun and gun['ammo']>0 and gun['reload']<=0
+                    and speed>.5 and (move[0]*dx+move[1]*dy)/(speed*distance)>.8):
+                action['boost']=True
         apply_weapon_control(self,obs,action,target,foe,squad)
         if (self.laser_rush and not self.ffa and mode in ('idle', 'loot', 'home') and target is None
                 and t - self.last_threat > 3 and t - self.npc_hurt > 3
