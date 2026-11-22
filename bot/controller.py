@@ -6,7 +6,7 @@ import time
 
 from .geometry import Arena, angle_diff, zone_goal, zone_deadline
 from .combat import assess_combat, apply_weapon_control
-from .loadout import choose_loadout, choose_objective, cube_upgrade_multiplier
+from .loadout import choose_loadout, choose_objective
 from .movement import Movement
 from .positional_field import PositionalField
 from .corridor import FightCorridor
@@ -34,18 +34,10 @@ class Controller:
         self.farming_policy=os.getenv('BOT_SQUAD_FARMING','legacy')
         self.squad_cover=os.getenv('BOT_SQUAD_POSITION','legacy')=='cover'
         self.nav_method=os.getenv('BOT_NAV_METHOD','spacing')
-        self.safe_combat_cubes = os.getenv('BOT_SAFE_COMBAT_CUBES', '1') == '1'
-        self.cube_upgrade_value = os.getenv('BOT_CUBE_UPGRADE_VALUE', '1') == '1'
-        self.opening_scan = os.getenv('BOT_OPENING_SCAN') == '1'
-        self.abandon_stalled_loot = os.getenv('BOT_ABANDON_STALLED_LOOT') == '1'
-        self.loot_stall = None
-        self.route_zone = os.getenv('BOT_ROUTE_ZONE') == '1'
-        self.zone_estimate = None
         self.recovery_since=None; self.recovery_cooldown=-100.
 
     def act(self,obs):
         self.action_deadline=time.perf_counter()+.027
-        self.cube_deadline=None
         self.movement.action_deadline=self.action_deadline
         stats = obs['self']['stats']
         size = (stats['radius'], stats['height'])
@@ -56,7 +48,6 @@ class Controller:
             self.movement.unstuck_until = 0.
             self.movement.cover = None
             self.movement.home_xy = None
-            self.zone_estimate = None
         self.update_world(obs); me=obs['self']; p=me['pos']; t=obs['t']; z=obs['zone']; hp=me['hp']/max(1,me['max_hp'])
         # This submission is explicitly for the cooperative practice field.
         practice = True
@@ -65,8 +56,6 @@ class Controller:
         late = (z['next_radius'] <= 70 and not hide) or obs['alive'] <= 3
         seen,target,foe,danger,finishing=self.assess_combat(obs,squad,late,hp)
         goal=zone_goal(z,*p[:2]); deadline=zone_deadline(self.hold,z,*p[:2],8); need=math.dist(p[:2],goal)*1.45/me['stats']['walk_speed']+4
-        if self.route_zone and t+need+40 >= deadline:
-            need=max(need,self.zone_route_time(p,goal,t,me['stats']['walk_speed']))
         zone_margin=14 if squad and self.nav_method=='early_zone' else 3
         urgent=not me['in_zone'] or t+need+zone_margin>=deadline
         action={'tick':obs['tick'],'move':[0.,0.],'fire':[False,False],'boost':False,'jump':False}; mode='idle'
@@ -125,10 +114,7 @@ class Controller:
                 radius=70 if hp>.5 else 70*.57
                 cubes=[item for kind,item,_ in self.items.values() if kind=='cubes' and math.dist(p[:2],item['pos'][:2])<radius]
                 if cubes:
-                    if self.safe_combat_cubes:
-                        cubes = self.safe_cubes(obs, seen, cubes)
-                    if cubes:
-                        cube=min(cubes,key=lambda item:math.dist(p[:2],item['pos'][:2])); action['move']=self.movement.navigate(me,cube['pos'],t); mode='fight:cube'
+                    cube=min(cubes,key=lambda item:math.dist(p[:2],item['pos'][:2])); action['move']=self.movement.navigate(me,cube['pos'],t); mode='fight:cube'
         elif self.retreat:
             covered=self.movement.seek_cover(obs,seen)
             if covered is not None:
@@ -156,23 +142,10 @@ class Controller:
                     if d > item['radius'] * .65:
                         action['move'] = self.movement.navigate(me, item['pos'], t)
                 elif kind=='npc' and t-when<1 and self.tracks[ident]['los'] and d<75:
-                    self.loot_stall = None
                     target=item; action['move']=self.movement.combat_move(obs,item,seen,squad,1,self.items)
-                elif kind=='crates' and d<50:
-                    self.loot_stall = None
-                    target=dict(item,kind='crate',vel=[0,0,0])
+                elif kind=='crates' and d<50: target=dict(item,kind='crate',vel=[0,0,0])
                 else:
                     action['move'] = self.movement.navigate(me, item['pos'], t)
-                    if self.abandon_stalled_loot:
-                        if d > 5 and not any(action['move']):
-                            if self.loot_stall is None or self.loot_stall[0] != ident:
-                                self.loot_stall = (ident, t)
-                            elif t-self.loot_stall[1] >= 2:
-                                self.bad[ident] = t+15
-                                self.loot_id = None
-                                self.loot_stall = None
-                        else:
-                            self.loot_stall = None
                     if self.laser_rush and kind == 'pickups' and item['kind'] == 'laser' and not self.ffa:
                         action['boost'] = not danger and d > 12 and me['energy'] > 60
             else:
@@ -192,19 +165,12 @@ class Controller:
                 mode = 'fight-corridor'
         self.movement.apply_evasion_and_recovery(obs,action,mode)
         apply_weapon_control(self,obs,action,target,foe,squad)
-        if (self.opening_scan and t < 60 and target is None and foe is None
-                and not danger and t-self.last_threat > 3
-                and t-self.last_hurt > 3 and t-self.npc_hurt > 3):
-            # One complete sweep approximately every eight seconds. Keep the
-            # weapon controller in charge whenever a threat is actionable.
-            action['aim'] = [angle_diff(t * math.tau / 8, 0), 0.]
         if (self.laser_rush and not self.ffa and mode in ('idle', 'loot', 'home') and target is None
                 and t - self.last_threat > 3 and t - self.npc_hurt > 3
                 and not any(w and w['kind'] == 'laser' for w in me['weapons'])
                 and t % 8 < 2.5):
             action['aim'] = [angle_diff(me['aim'][0] + 1.3, 0), 0.]
         if mode=='recover': action['fire']=[False,False]
-        if mode != 'loot': self.loot_stall = None
         action.update(choose_loadout(obs,self.cfg))
         self.mode=mode
         return action
@@ -217,63 +183,3 @@ class Controller:
 
     def choose_objective(self, obs, hp, danger, squad):
         return choose_objective(self, obs, hp, danger, squad)
-
-    def safe_cubes(self, obs, enemies, cubes):
-        """Short, visible cube detours that do not add enemy firing lines."""
-        me=obs['self']; p=me['pos']; now=obs['t']; result=[]
-        if not cubes: return result
-        if getattr(self, 'cube_deadline', None) is None:
-            self.cube_deadline=min(self.action_deadline,time.perf_counter()+.005)
-        deadline=self.cube_deadline
-        # Above the stat cap, a single cube only warrants a combat detour if
-        # it immediately yields an upgrade; size keeps increasing regardless.
-        if (me['cubes'] >= self.cfg['cubes']['stat_cap'] and
-                (not self.cube_upgrade_value or cube_upgrade_multiplier(self.cfg, me['cubes']) == 1)):
-            return result
-        threats=[]
-        for enemy in enemies:
-            if time.perf_counter() >= deadline: return []
-            if enemy['kind'] != 'mech': continue
-            tr=self.tracks.get(enemy['id'])
-            if not tr or now-tr['seen'] > 1: continue
-            scale=1+enemy.get('cubes',0)*self.cfg['cubes'].get('size_per_cube',.05)
-            muzzle=(*enemy['pos'][:2],enemy['pos'][2]+self.cfg['mech']['muzzle_height']*scale)
-            reach=max((self.cfg['weapons'][w].get('range',200) for w in enemy.get('weapons',[]) if w in self.cfg['weapons']),default=0)
-            threats.append((muzzle,reach))
-        def exposure(point):
-            if time.perf_counter() >= deadline: return None
-            chest=(*point,self.world.walk_at(*point)+me['stats']['height']*.6)
-            count=0
-            for muzzle,reach in threats:
-                if time.perf_counter() >= deadline: return None
-                if math.dist(point,muzzle[:2]) <= reach and self.world.shot_clear(muzzle,chest): count+=1
-            return count if time.perf_counter() < deadline else None
-        current=exposure(p[:2])
-        if current is None: return result
-        for cube in sorted(cubes,key=lambda item:math.dist(p[:2],item['pos'][:2]))[:6]:
-            if time.perf_counter() >= deadline: break
-            pos=cube['pos']; remembered=self.items.get(cube['id'])
-            if not remembered or now-remembered[2] > 1 or abs(pos[2]-p[2]) > 3.6: continue
-            if math.dist(p[:2],pos[:2]) > 25 or not self.world.line_walkable(p,pos): continue
-            midpoint=((p[0]+pos[0])/2,(p[1]+pos[1])/2)
-            middle=exposure(midpoint)
-            if middle is None: break
-            end=exposure(pos[:2])
-            if end is None: break
-            if max(middle,end) <= min(1,current): result.append(cube)
-        return result
-
-    def zone_route_time(self, pos, goal, now, speed):
-        """Use completed ground routes only; fall back to the baseline estimate."""
-        cached=self.zone_estimate
-        if (cached is None or now-cached[0] >= 1 or math.dist(pos[:2],cached[1]) > 10
-                or math.dist(goal[:2],cached[2]) > 5):
-            remaining=max(0., min(.003, self.action_deadline-time.perf_counter()))
-            if remaining <= 0: return 0.
-            cells, complete=self.world.path(pos,goal,budget_s=remaining)
-            length=0.
-            if complete and cells:
-                points=[pos[:2],*(self.world.cell_pos(c) for c in cells),goal[:2]]
-                length=sum(math.dist(a,b) for a,b in zip(points,points[1:]))
-            self.zone_estimate=(now,tuple(pos[:2]),tuple(goal[:2]),length)
-        return self.zone_estimate[3]/max(1,speed)+4 if self.zone_estimate[3] else 0.
