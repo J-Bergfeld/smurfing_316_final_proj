@@ -6,7 +6,21 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 ## Official practice — builders-4
 
-**Aggressive retreat and targeting candidate:** Based on the runtime and Docker
+**Subtle gun-range candidate — score pending:** Starting from `fb99ebd` (4.93),
+ordinary squad combat with a gun and no laser or lightning prefers 82 m rather
+than 85 m when seeking line of sight. Target selection, retreat decisions and
+cornered retreat movement retain the parent behavior. Other positioning
+planners can still take priority. Hypothesis: slightly shorter range improves
+gun pressure; risk: the extra proximity increases damage taken. Compare with
+`fb99ebd` before attributing any score difference to this single change.
+
+**Aggressive retreat and targeting candidate — official 4.93:** The user
+reports that `fb99ebd` scored **4.93**, compared with **5.47** for `955e6bf`
+(observed difference −0.54). The run ID and submission time were not supplied.
+The runs use independent private seeds, so the difference does not establish a
+causal effect. Retain `955e6bf` as the best reported practice result.
+
+The candidate is based on the runtime and Docker
 settings of `955e6bf` (5.47), with the later favorable-fight initiation and
 timeout fallback removed. In practice, retreat starts at higher health when
 outnumbered or losing a one-on-one exchange and persists for three seconds;
@@ -14,7 +28,17 @@ offensive positioning yields to retreat unless finishing or in the late game.
 Vulnerable visible enemies can be engaged farther away and have a stronger
 priority over the current target. This combines two changes, so an official
 result cannot isolate their contributions. Longer retreats may sacrifice damage
-or expose the rear, and switching may waste aim time. Official score pending.
+or expose the rear, and switching may waste aim time.
+
+**Next hypothesis:** Survival may benefit more from cover that preserves a
+firing opportunity than from a longer retreat triggered by health and enemy
+count alone. This candidate can retreat without creating the damage-free window
+needed for regeneration, and its reduced target persistence may delay kills.
+These are plausible mechanisms, not observed causes of the score. Compare each
+change separately against `955e6bf`: first measure retreat duration, damage
+dealt and received, healing windows, target switches, kills, and placement in
+matched local scenarios; then test a narrowly scoped change where those traces
+show a recurring problem. The proxy is not an official score predictor.
 
 **Favorable-fight candidate — official 5.03:** The user reports that `3a9ff29`
 scored **5.03** in builders-4. The run ID and timestamp were not supplied. This
@@ -78,6 +102,7 @@ to any individual mechanism. Run ID and timestamp were not supplied.
 | Commit | Configuration | Score |
 | --- | --- | ---: |
 | `955e6bf` | Jack aim, corridor off, early drone off | **5.47** |
+| `fb99ebd` | Earlier, longer retreat and stronger vulnerable-target priority | 4.93 |
 | `7d09a1b` | Fixed upgrade order, positional field and corner duel on | 5.35 |
 | `9078ed6` | 5.47 baseline, predictive projectile dodge and timeout fallback | 5.29 |
 | `37d0167` | 5.47 baseline, combined movement changes | 5.11 |

@@ -1,4 +1,5 @@
 import unittest
+import time
 from unittest.mock import Mock, patch
 
 from bot.controller import Controller
@@ -62,6 +63,23 @@ class AggressiveCombatTests(unittest.TestCase):
         self.assertEqual(self.bot.mode, 'cover')
         self.bot.field.choose.assert_not_called()
         self.bot.movement.isolate_hunter.assert_not_called()
+
+    def test_gun_range_tuning_closes_slightly_only_while_seeking_shot(self):
+        movement = self.bot.movement
+        movement.world = Mock(baked=None)
+        movement.world.line_walkable.return_value = True
+        movement.world.free_cell.return_value = True
+        movement.world.walk_at.return_value = 0
+        movement.world.shot_clear.return_value = True
+        movement.strafe_until = 100
+        movement.action_deadline = time.perf_counter() + 10
+        foe = enemy(83)
+        baseline = movement.combat_move(self.obs, foe, [foe], True, 1)
+        tuned = movement.combat_move(self.obs, foe, [foe], True, 1, aggressive=True)
+        self.assertGreater(tuned[0], baseline[0])
+        hidden = movement.combat_move(self.obs, foe, [foe], True, -1)
+        tuned_hidden = movement.combat_move(self.obs, foe, [foe], True, -1, aggressive=True)
+        self.assertEqual(hidden, tuned_hidden)
 
 
 if __name__ == '__main__':
