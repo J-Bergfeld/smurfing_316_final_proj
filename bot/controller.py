@@ -21,7 +21,8 @@ class Controller:
         self.last_hurt=-100.; self.last_threat=-100.; self.lose_at=-100.; self.retreat=False; self.hold=None; self.phase=None
         self.target_id=None; self.target_at=-100.; self.loot_id=None; self.loot_since=0; self.bad={}
         self.movement=Movement(self.world,self.cfg,self.rng)
-        self.field = PositionalField(self.world) if os.getenv('BOT_POSITIONAL_FIELD') == '1' else None
+        self.pressure_field = os.getenv('BOT_PRESSURE_FIELD') == '1'
+        self.field = PositionalField(self.world) if os.getenv('BOT_POSITIONAL_FIELD') == '1' or self.pressure_field else None
         self.corridor = FightCorridor(self.field) if self.field and os.getenv('BOT_FIGHT_CORRIDOR') == '1' else None
         self.tactical = TacticalPlanner(self.world) if os.getenv('BOT_TACTICAL_PLANNER') == '1' else None
         self.npc_hurt=-100.; self.npc_bearing=None; self.npc_id=None
@@ -36,6 +37,8 @@ class Controller:
         self.decision_policy = os.getenv('BOT_DECISION_POLICY', 'classic')
         self.exchange_model = os.getenv('BOT_PRESSURE_EXCHANGE') == '1'
         self.laser_peek = os.getenv('BOT_PRESSURE_PEEK') == '1'
+        self.pressure_force_squad = os.getenv('BOT_PRESSURE_FORCE_SQUAD') == '1'
+        self.pressure_weapon_range = os.getenv('BOT_PRESSURE_WEAPON_RANGE') == '1'
         self.recent_damage = []
         self.unseen_hit_at = -100.
         self.unseen_hit_bearing = 0.
@@ -395,6 +398,8 @@ class Controller:
     def act_pressure(self, obs):
         """Coordinate combat, recovery and objectives using persistent threat state."""
         self.mark_exploration(obs)
+        if self.pressure_field:
+            self.field.hear(obs)
         me, now, zone = obs['self'], obs['t'], obs['zone']
         pos = me['pos']
         hp = me['hp'] / max(1, me['max_hp'])
@@ -414,9 +419,9 @@ class Controller:
         self.lobby_unknown_deaths += max(0, deaths - credited)
         self.lobby_alive = min(self.lobby_alive, obs['alive'])
         self.lobby_kills = len(self.kills)
-        if ((self.lobby_unknown_deaths >= 1 and now < 35)
+        if (not self.pressure_force_squad and ((self.lobby_unknown_deaths >= 1 and now < 35)
                 or (self.lobby_unknown_deaths >= 2 and now < 110)
-                or self.lobby_unknown_deaths >= 3):
+                or self.lobby_unknown_deaths >= 3)):
             self.ffa = True
         self.recent_damage.extend((now, e.get('amount', 0)) for e in obs.get('events', [])
                                   if e['type'] == 'damaged' and e.get('weapon') not in ('npc', 'zone'))
@@ -508,6 +513,14 @@ class Controller:
                 not self.retreat and not urgent and not shell and now>=self.movement.unstuck_until and
                 (attack or slip is not None)):
             peek = pressure_laser_peek(self, obs, threat, actors)
+        field_eligible = (self.pressure_field and not self.ffa and me['grounded'] and attack
+                          and selected and selected['current'] and len(engaged) >= 2
+                          and not self.retreat and not urgent and not shell and slip is None
+                          and peek is None and now >= self.movement.unstuck_until)
+        if self.pressure_field and not field_eligible:
+            self.field.key = None
+            self.field.route.clear()
+            self.field.breakdown.clear()
         if now < self.movement.unstuck_until:
             action['move'] = list(self.movement.unstuck_dir); mode = 'unstuck'
         elif shell:
@@ -545,15 +558,23 @@ class Controller:
             nearest = min((item for item in engaged if item['current']), key=lambda item:item['distance'], default=None)
             kite = bool(len(engaged)>=2 and nearest and nearest['distance']<=210
                         and (not cautious or have_laser) and (have_laser or not lightning or me['energy']<=40))
+            if field_eligible and (weapon or cube):
+                self.field.key = None
+                self.field.route.clear()
+                self.field.breakdown.clear()
             if weapon:
                 action['move'] = self.movement.navigate(me, weapon['pos'], now); mode = 'fight-weapon'
             elif cube:
                 action['move'] = self.movement.navigate(me, cube['pos'], now); mode = 'fight-cube'
+            elif (field_eligible and time.perf_counter() < self.action_deadline - .006
+                  and (step := self.field.choose(self, obs, threat)) is not None):
+                action['move'] = step; mode = 'positional-field'
             elif kite:
                 action['move'] = self.movement.pressure_kite(obs, nearest['actor'])
                 action['boost'] = nearest['distance'] < 70 and me['energy'] > 45; mode = 'kite'
             else:
-                action['move'] = self.movement.combat_move(obs, threat, actors, True, 1, self.items, desired_override=30)
+                desired = None if self.pressure_weapon_range and not lightning else 30
+                action['move'] = self.movement.combat_move(obs, threat, actors, True, 1, self.items, desired_override=desired)
                 if lightning and distance > lightning['stats']['range']+10 and me['energy'] > 55:
                     action['boost'] = True
                 mode = 'fight'

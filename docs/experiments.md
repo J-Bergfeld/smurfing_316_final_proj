@@ -4,6 +4,15 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 **Scoring context:** Unless explicitly marked builders-4, the official practice scores and comparisons in this document use the old scoring setup. The user reports that `835d4a7` was rescored at **5.21** under builders-4; its old score was **5.23**. Do not compare old scores directly with builders-4 scores.
 
+## Recent pressure-policy results
+
+The user reports an official practice score of **4.19** for `9e8a264` and
+**4.27** for `58a7bb5`. Run IDs, timestamps, and scorer versions were not
+supplied. These are separate runs, so the observed difference does not isolate
+the effect of the intervening roof, exposure, and timing changes. The current
+pressure-policy benchmark is `58a7bb5`; the historical 5.47 result below used
+the earlier controller and may not share the same benchmark conditions.
+
 ## Official practice — builders-4
 
 **Favorable-fight candidate — official 5.03:** The user reports that `3a9ff29`

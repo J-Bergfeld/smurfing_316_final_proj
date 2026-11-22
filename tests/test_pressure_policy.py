@@ -1,7 +1,7 @@
 import unittest
 import time
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from bot.combat import aim_and_fire, apply_weapon_control, assess_pressure, mortar_solution, shot_to_surface_clear, pressure_advantage, pressure_dps, pressure_laser_peek
 from bot.controller import Controller
@@ -106,6 +106,83 @@ class PressurePolicyTests(unittest.TestCase):
         _, engaged, _ = assess_pressure(self.bot, self.obs)
         self.assertEqual(engaged, [])
 
+    def test_force_squad_blocks_automatic_ffa_inference(self):
+        self.bot.tracks = {}
+        with patch.object(self.bot, 'mark_exploration'), \
+             patch.object(self.bot.movement, 'avoid_shells', return_value=None), \
+             patch.object(self.bot.movement, 'apply_evasion_and_recovery'), \
+             patch.object(self.bot, 'choose_objective', return_value=None), \
+             patch.object(self.bot, 'pressure_roam', return_value=None), \
+             patch.object(self.bot, 'pressure_exposure_hold', return_value=None), \
+             patch('bot.controller.apply_weapon_control'):
+            self.bot.pressure_force_squad = True
+            self.bot.act_pressure(self.obs)
+            self.obs['alive'] -= 1
+            self.bot.act_pressure(self.obs)
+            self.assertEqual(self.bot.lobby_unknown_deaths, 1)
+            self.assertFalse(self.bot.ffa)
+            self.bot.pressure_force_squad = False
+            self.bot.act_pressure(self.obs)
+            self.assertTrue(self.bot.ffa)
+
+    def test_optional_pressure_field_preserves_target_and_safety_priorities(self):
+        self.bot.pressure_field = True
+        self.bot.field = Mock(key='previous', route=[(1, 1)], breakdown={'old': True})
+        self.bot.field.choose.return_value = [.25, .75]
+        self.bot.action_deadline = time.perf_counter() + 10
+        second = enemy(90)
+        second['id'] = 8
+        selected = {'actor': self.foe, 'track': {'los': True}, 'distance': 80,
+                    'current': True, 'active': True}
+        other = {'actor': second, 'track': {'los': True}, 'distance': 90,
+                 'current': True, 'active': True}
+        with patch('bot.controller.assess_pressure', return_value=([selected, other], [selected, other], selected)), \
+             patch.object(self.bot, 'mark_exploration'), \
+             patch.object(self.bot, 'pressure_zone', return_value=((50, 0), False)) as zone, \
+             patch.object(self.bot, 'pressure_fight_weapon', return_value=None), \
+             patch.object(self.bot, 'pressure_fight_cube', return_value=None), \
+             patch.object(self.bot.movement, 'avoid_shells', return_value=None) as shells, \
+             patch.object(self.bot.movement, 'navigate', return_value=[1., 0.]), \
+             patch.object(self.bot.movement, 'apply_evasion_and_recovery'), \
+             patch('bot.controller.apply_weapon_control') as weapon_control:
+            action = self.bot.act_pressure(self.obs)
+            self.assertEqual(action['move'], [.25, .75])
+            self.assertEqual(self.bot.mode, 'positional-field')
+            self.assertIs(weapon_control.call_args.args[3], self.foe)
+            self.bot.field.choose.assert_called_once()
+
+            self.bot.field.choose.reset_mock()
+            shells.return_value = [-1., 0.]
+            action = self.bot.act_pressure(self.obs)
+            self.assertEqual(action['move'], [-1., 0.])
+            self.bot.field.choose.assert_not_called()
+            self.assertIsNone(self.bot.field.key)
+            self.assertEqual(self.bot.field.route, [])
+
+            shells.return_value = None
+            zone.return_value = ((50, 0), True)
+            self.bot.act_pressure(self.obs)
+            self.assertEqual(self.bot.mode, 'zone')
+            self.bot.field.choose.assert_not_called()
+
+    def test_pressure_field_skipped_when_budget_nearly_spent(self):
+        self.bot.pressure_field = True
+        self.bot.field = Mock(route=[], breakdown={})
+        self.bot.action_deadline = time.perf_counter() + .001
+        selected = {'actor': self.foe, 'track': {'los': True}, 'distance': 80,
+                    'current': True, 'active': True}
+        with patch('bot.controller.assess_pressure', return_value=([selected, selected], [selected, selected], selected)), \
+             patch.object(self.bot, 'mark_exploration'), \
+             patch.object(self.bot, 'pressure_zone', return_value=((0, 0), False)), \
+             patch.object(self.bot, 'pressure_fight_weapon', return_value=None), \
+             patch.object(self.bot, 'pressure_fight_cube', return_value=None), \
+             patch.object(self.bot.movement, 'avoid_shells', return_value=None), \
+             patch.object(self.bot.movement, 'pressure_kite', return_value=[1., 0.]), \
+             patch.object(self.bot.movement, 'apply_evasion_and_recovery'), \
+             patch('bot.controller.apply_weapon_control'):
+            self.bot.act_pressure(self.obs)
+        self.bot.field.choose.assert_not_called()
+
     def test_missing_opponent_is_not_treated_as_current(self):
         self.bot.tracks[self.foe['id']]['seen'] = self.obs['t'] - .1
         _, engaged, target = assess_pressure(self.bot, self.obs)
@@ -156,6 +233,28 @@ class PressurePolicyTests(unittest.TestCase):
              patch('bot.controller.apply_weapon_control') as weapon_control:
             self.bot.act_pressure(self.obs)
         self.assertIs(weapon_control.call_args.args[3], self.foe)
+
+    def test_optional_weapon_range_leaves_lightning_close(self):
+        with patch.object(self.bot.movement, 'avoid_shells', return_value=None), \
+             patch.object(self.bot.movement, 'combat_move', return_value=[0, 0]) as move, \
+             patch.object(self.bot.movement, 'apply_evasion_and_recovery'), \
+             patch.object(self.bot, 'pressure_fight_weapon', return_value=None), \
+             patch.object(self.bot, 'pressure_fight_cube', return_value=None), \
+             patch('bot.controller.apply_weapon_control'):
+            self.bot.pressure_weapon_range = False
+            self.bot.act_pressure(self.obs)
+            self.assertEqual(move.call_args.kwargs['desired_override'], 30)
+            self.bot.pressure_weapon_range = True
+            self.bot.act_pressure(self.obs)
+            self.assertIsNone(move.call_args.kwargs['desired_override'])
+            self.obs['self']['weapons'][1] = {
+                'kind': 'laser', 'stats': HELLO['config']['weapons']['laser']}
+            self.bot.act_pressure(self.obs)
+            self.assertIsNone(move.call_args.kwargs['desired_override'])
+            self.obs['self']['weapons'][1] = {
+                'kind': 'lightning', 'stats': HELLO['config']['weapons']['lightning']}
+            self.bot.act_pressure(self.obs)
+            self.assertEqual(move.call_args.kwargs['desired_override'], 30)
 
     def test_peek_can_start_laser_charge_while_moving_to_cover(self):
         self.bot.laser_peek = True
