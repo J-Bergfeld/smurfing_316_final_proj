@@ -15,6 +15,7 @@ Practice scores are mean placement points; local simulator results are hypothese
 | `ded4a9c`, default | 4.81 | Unknown | Squad cover and weapon readiness; user-reported score. No local placement screen, submission time or run ID recorded. |
 | `ee4f342`, default | 5.04 | 5.125 / −0.085; approximate candidate, see note | Recovery enabled by default; user reported score. Submission time and run ID unknown. |
 | `9ceca70`, presumed default | 5.06 | 5.75 / −0.69; approximate first control, see note | User reported current repository result; recovery defaults to legacy. Submission time, run ID, and environment overrides unknown. |
+| `26db76c`, packaged cornered dodge | **4.90** | 4.52 / +0.38 on the 50-pair holdout | User-reported official trial, 0.27 below champion. [Trial record](m6_cornered_boost.md#official-result) |
 | `184bb55`, default | 4.88 | 3.81 / +1.07; approximate control, see note | Previously reported official baseline; submission time and run ID unknown. |
 | `2646e82` | 2.92 | 3.19 / −0.27 | Commit inferred from timestamp. |
 | `9a73729` | 2.71 | 3.06 / −0.35 | Reported baseline. |

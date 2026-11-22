@@ -88,6 +88,8 @@ python3 tools/paired_panel.py --sim "$SIM" --spec experiments/squad-confirm.json
 
 The smoke screen compared existing options. A/default averaged 7.67, B/recovery 8.00 and C/position 7.67. B−A was +0.33, C−A 0, B−C +0.33. On five fresh confirmation pairs both A and B averaged 3.20, with B−A differences +1, 0, −1, 0, 0 and bootstrap interval [−0.6, +0.6]. There were zero late or invalid replies in either study. This is a pipeline check and provides no basis for promoting a challenger. Score intervals on three or five observations are descriptive. The historical official champion stays recorded in docs/experiments.md.
 
+New A/B confirmations default to **12 pairs (24 matches)** when `--confirm` is supplied without `--seeds`. Use an explicit `--seeds N` for a differently sized study. On the completed cornered-dodge run, the first 12 pairs used 2.92 minutes of summed match wall time versus 11.69 minutes for all 50. The corresponding retrospective 95% paired intervals were [−0.50, +0.67] and [−0.50, +0.34]. Choose the size and fresh offset before running.
+
 Development uses seeds 422000–422999 and confirmation 423000–423999, indexed by --offset and --seeds. Choose fresh, logged offsets on later studies and predeclare the size before examining results. Confirmation verifies the screened reference and challenger identities and environment context. The runner checks every paired layout. Turn order rotates within each seed. Each study compiles geometry once; each match starts a fresh process and Map. Running several timed bots on shared cores can change policy decisions and timeout rates, so these measurements use serial full matches. Independent unit tests can run concurrently.
 
 For the compilation comparison below, the same frozen screen runner and seed 421101 scored one point both ways. Startup fell from 1.43 s (0.45 s in cc) to 0.64 s, and wall time from 5.61 s to 4.82 s. This single pair includes cache warming and timing variation. The verified saving is one compilation per subsequent match. The screen compiled once for nine games and confirmation once for ten.
@@ -100,7 +102,7 @@ S=mech-testing/eval-screen
 
 ## Manual official records
 
-The SQLite log imports a completed frozen reference panel, supports a reasoned queue, and records actual submissions and results manually. The slot view needs a complete submission history for the last hour and a caller-supplied verified platform limit. It cannot see the platform. No submission timestamps or official results were supplied for the frozen baseline. Its matched calibration sample is **n=0**. Earlier approximate local builds and user-reported aggregate scores are retained in docs/experiments.md.
+The SQLite log imports a completed frozen reference panel, supports a reasoned queue, and records actual submissions and results manually. The slot view needs a complete submission history for the last hour and a caller-supplied verified platform limit. It cannot see the platform. No submission timestamps or official results were supplied for the frozen baseline. Its matched calibration sample is **n=0**. A separate [historical calibration](m5_official_feedback.md) uses five exact-revision reruns and their reported aggregates. Supply --history-complete to the slots command after reconciling the last hour with the platform.
 
 ```sh
 DB=mech-testing/eval-registry.sqlite

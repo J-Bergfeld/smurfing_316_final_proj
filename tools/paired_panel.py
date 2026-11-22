@@ -94,8 +94,12 @@ if __name__ == '__main__':
     parser.add_argument('--out', required=True, type=Path)
     parser.add_argument('--confirm', type=Path, help='screen report for the selected A/B builds')
     parser.add_argument('--offset', default=0, type=int)
-    parser.add_argument('--seeds', required=True, type=int)
+    parser.add_argument('--seeds', type=int, help='Number of paired seeds (confirmation default: 12; required for screening)')
     args = parser.parse_args()
+    if args.seeds is None:
+        if not args.confirm:
+            parser.error('--seeds is required for screening')
+        args.seeds = 12
     try:
         run(args)
     except ValueError as exc:

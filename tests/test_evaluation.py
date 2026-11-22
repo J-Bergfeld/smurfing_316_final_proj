@@ -97,3 +97,16 @@ class PipelineTests(unittest.TestCase):
             self.assertNotEqual(first['bot'],second['bot'])
             with zipfile.ZipFile(root/'a/inputs.zip') as archive:
                 self.assertEqual(archive.read('bot/main.py'),b'print(1)')
+
+    def test_undated_official_scores_are_separate_from_confirmed_runs(self):
+        import sqlite3
+        from tools.official_log import schema, calibration
+        with sqlite3.connect(':memory:') as db:
+            schema(db)
+            db.execute('INSERT INTO candidates VALUES (?,?,?,?,?)',('b','rev','h','cfg','archive'))
+            db.execute('INSERT INTO reference_runs VALUES (?,?,?,?)',('b','p',3,'path'))
+            db.execute('INSERT INTO historical_scores VALUES (?,?,?,?)',('b','unknown-version',5,'scoreboard'))
+            self.assertEqual(calibration(db,'p','unknown-version')['n'],0)
+            historical=calibration(db,'p','unknown-version',historical=True)
+            self.assertEqual((historical['n'],historical['bias']),(1,2))
+            self.assertEqual(db.execute('SELECT count(*) FROM submissions').fetchone()[0],0)

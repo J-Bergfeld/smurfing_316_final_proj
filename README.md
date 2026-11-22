@@ -110,3 +110,7 @@ limit on the submission platform. The leaderboard ranks the best practice result
 ## Evaluation
 
 The default policy scored **3.90 local placement points** on 20 fresh squad-proxy matches. The simulator recorded 13 gun, five laser, one lightning and one zone elimination. The [baseline report](docs/evaluation_baseline.md) links the underlying terminal windows. The [audit](docs/evaluation_audit.md) measures runtime and the [evaluation commands](docs/evaluation_methodology.md) reproduce the baseline, replay focused scenarios, compare frozen candidates on paired seeds, and record manual official results.
+
+The [official feedback report](docs/m5_official_feedback.md) covers slot tracking and calibration against five historical entries. The [cornered-dodge trial](docs/m6_cornered_boost.md) records the opt-in gameplay change and its paired evaluation.
+
+Routine A/B holdouts now default to 12 paired seeds (24 matches). Override with `--seeds N` when planning a larger comparison.

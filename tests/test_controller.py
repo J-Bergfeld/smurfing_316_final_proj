@@ -14,6 +14,23 @@ from test_bot import HELLO, enemy, observation
 
 
 class ControllerTests(unittest.TestCase):
+    def test_cornered_projectile_boost_respects_energy_and_ground_contact(self):
+        obs = observation()
+        obs['projectiles'] = [{'kind':'gun', 'pos':[-20, 0, 5], 'vel':[200, 0, 0]}]
+        for flag, mode, grounded, energy, expected in [
+            ('1','cornered',True,26,True), ('0','cornered',True,26,False),
+            ('1','fight',True,26,False), ('1','cornered',False,26,False),
+            ('1','cornered',True,25,False),
+        ]:
+            with self.subTest(flag=flag,mode=mode,grounded=grounded,energy=energy):
+                with patch.dict('os.environ', {'BOT_CORNERED_BOOST':flag}):
+                    move = Movement(Mock(), HELLO['config'], random.Random(1))
+                obs['self'].update(grounded=grounded,energy=energy)
+                action = dict(move=[0,0],boost=False)
+                move.apply_evasion_and_recovery(obs,action,mode)
+                self.assertEqual(action['boost'],expected)
+                self.assertNotEqual(action['move'],[0,0])
+
     def test_spacing_moves_away_from_nearby_second_enemy(self):
         obs=observation(); foe=enemy(80); other=enemy(-30); other['id']=8
         world=Mock(); world.line_walkable.return_value=True; world.free_cell.return_value=True

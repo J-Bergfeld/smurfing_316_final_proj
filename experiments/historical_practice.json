@@ -1,0 +1,39 @@
+{
+  "cohort": "reported-practice-version-unknown",
+  "source": "docs/experiments.md#official-practice",
+  "benchmark_version": null,
+  "champion_revision": "4991fa605bce4de1ba4d204ced8b6152ab8d1fef",
+  "champion_rule": "Highest reported score, earlier entry wins ties per the historical scoreboard.",
+  "builds": [
+    {
+      "revision": "4991fa605bce4de1ba4d204ced8b6152ab8d1fef",
+      "settings": "default",
+      "official_score": 5.17,
+      "dockerfile_sha256": "67138a60a27e2ed474537fead4b58d35219d64f20ed1a034dcc587a82664a11b"
+    },
+    {
+      "revision": "c5aeebba81a5b7c592f4093a38d913514e1c01ac",
+      "settings": "default",
+      "official_score": 5.17,
+      "dockerfile_sha256": "67138a60a27e2ed474537fead4b58d35219d64f20ed1a034dcc587a82664a11b"
+    },
+    {
+      "revision": "fb8509717ec48667a9a5d49caad256e5c0ef2a69",
+      "settings": "default",
+      "official_score": 5.1,
+      "dockerfile_sha256": "67138a60a27e2ed474537fead4b58d35219d64f20ed1a034dcc587a82664a11b"
+    },
+    {
+      "revision": "37d1a1d3088559d35bf4140bfa6bcde12061d1b3",
+      "settings": "default",
+      "official_score": 5.06,
+      "dockerfile_sha256": "67138a60a27e2ed474537fead4b58d35219d64f20ed1a034dcc587a82664a11b"
+    },
+    {
+      "revision": "ded4a9cc1d9d2e0bc80d6e2f740d4edea636cd04",
+      "settings": "default",
+      "official_score": 4.81,
+      "dockerfile_sha256": "67138a60a27e2ed474537fead4b58d35219d64f20ed1a034dcc587a82664a11b"
+    }
+  ]
+}

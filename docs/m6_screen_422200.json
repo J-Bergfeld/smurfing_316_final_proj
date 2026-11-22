@@ -1,0 +1,96 @@
+{
+  "stage": "screen",
+  "builds": {
+    "A": "9c8b8290c98bbd670638274a42fa9960823a8178e5633d9ebd447813e88a107f",
+    "B": "8b36d5adb814f812988423782696177dc6e99b1c1db3cf1c59aeafbce70f4ce6"
+  },
+  "context": {
+    "sim": "71f4e70796d5b20777951d0317edf4bdfaf76fc1fdfc8dff50dc5281e4517be8",
+    "kit": "023ed220514f29dda9389ccd4643625ffc7aa494569d18c28098553bb2a315bc",
+    "tools": "453da278ff0775ca7f46f2b3680984c7552ca05c34d3d6240785cd0cc471abc6"
+  },
+  "spec": {
+    "A": {
+      "root": "..",
+      "env": {},
+      "hypothesis": "Default policy reference"
+    },
+    "B": {
+      "root": "..",
+      "env": {
+        "BOT_CORNERED_BOOST": "1"
+      },
+      "hypothesis": "Extra ground speed during projectile evasion when retreat cannot reach cover improves placement"
+    }
+  },
+  "seed_start": 422200,
+  "seeds": 15,
+  "compile_seconds": 0.32525195799999995,
+  "geometry_sha256": "f00d4a22b3bce6d502e6771127c5d81cb6ca7f2e7b883e03c982be234b50986c",
+  "parent_report_sha256": null,
+  "summaries": {
+    "A": {
+      "mean": 4.133333333333334,
+      "matches": 15,
+      "kills": 2.1333333333333333,
+      "survival_s": 184.35,
+      "late": 0,
+      "invalid": 0
+    },
+    "B": {
+      "mean": 4.666666666666667,
+      "matches": 15,
+      "kills": 2.6,
+      "survival_s": 191.37333333333333,
+      "late": 1,
+      "invalid": 1
+    }
+  },
+  "comparisons": {
+    "B-A": {
+      "delta": 0.5333333333333333,
+      "median": 0,
+      "sd": 1.4573295865416045,
+      "se": 0.3762808812407316,
+      "pairs": 15,
+      "win_fraction": 0.4,
+      "per_seed": {
+        "422200": 0,
+        "422201": 1,
+        "422202": 1,
+        "422203": 1,
+        "422204": -2,
+        "422205": 0,
+        "422206": 3,
+        "422207": 0,
+        "422208": 4,
+        "422209": 0,
+        "422210": 1,
+        "422211": -1,
+        "422212": 0,
+        "422213": 0,
+        "422214": 0
+      },
+      "bootstrap95": [
+        -0.13333333333333333,
+        1.2666666666666666
+      ],
+      "worst_regressions": [
+        [
+          422204,
+          -2
+        ],
+        [
+          422211,
+          -1
+        ]
+      ],
+      "mean_metric_deltas": {
+        "kills": 0.4666666666666667,
+        "game_seconds": 7.023333333333334,
+        "terminal_cubes": -0.06666666666666667,
+        "incoming_damage": 190.48322666666672
+      }
+    }
+  }
+}

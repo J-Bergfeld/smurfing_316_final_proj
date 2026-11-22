@@ -40,7 +40,7 @@ def replay(path):
     bot = Bot(hello)
     schema = Schema(ROOT/'mechfight.schema.json')
     modes = Counter()
-    triggers = low_hp_triggers = 0
+    triggers = low_hp_triggers = boost_steps = 0
     start = time.perf_counter()
     for o in obs:
         action = bot.act(o)
@@ -48,11 +48,12 @@ def replay(path):
             raise ValueError(f"invalid action at tick {o['tick']}")
         json.dumps(action,allow_nan=False)
         modes[getattr(bot.strategy,'mode','unreported')] += 1
+        boost_steps += bool(action.get('boost'))
         fired = any(action.get('fire',[]))
         triggers += fired
         low_hp_triggers += fired and o['self']['hp'] <= .35*o['self']['max_hp']
     print(json.dumps(dict(fixture=path.name, seed=fixture['match_seed'], steps=len(obs), modes=modes,
-                          trigger_steps=triggers, low_hp_trigger_steps=low_hp_triggers,
+                          trigger_steps=triggers, low_hp_trigger_steps=low_hp_triggers, boost_steps=boost_steps,
                           decision_loop_seconds=time.perf_counter()-start)))
 
 
