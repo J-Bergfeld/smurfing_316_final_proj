@@ -4,6 +4,6 @@ COPY main.py mechfight.py ./
 COPY bot ./bot
 ENV PYTHONDONTWRITEBYTECODE=1 \
     BOT_NAV_METHOD=legacy \
-    BOT_GUN_AIM_CHECK=legacy \
+    BOT_GUN_AIM_CHECK=actual \
     BOT_LATE_HIDE=1
 ENTRYPOINT ["python3", "-u", "/bot/main.py"]

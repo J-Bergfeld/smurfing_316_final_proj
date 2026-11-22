@@ -8,9 +8,11 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 | Commit / settings | Score | Squad-proxy mean / official minus proxy | Status / provenance |
 | --- | ---: | --- | --- |
-| `47291ba`, packaged cornered boost, cover recovery and spacing | 4.88 | Unknown | Latest user-reported official trial. Scored 0.02 below the `26db76c` cornered-dodge trial and 0.29 below the 5.17 best. |
-| `4991fa6`, default | **5.17** | 3.81 / +1.36; approximate control, see note | Best reported official entry; earlier than tied `c5aeebb`. User confirmed commit and defaults; submission time and run ID unknown. |
-| `c5aeebb`, default | **5.17** | 3.875 / +1.295; approximate candidate, see note | Shared-torso gun aim; user-reported score ties the champion. Submission time and run ID unknown. |
+| `c5aeebba81a5`, default, second run | **5.23** | — | Best reported official practice score. User-reported rerun of the 5.17 shared-torso entry. |
+| `c68975862d2b`, supply drops and late-circle play with legacy gun aim | 5.17 | 5.56 on the 16-seed validation panel | User-reported official practice score. |
+| `47291ba`, packaged cornered boost, cover recovery and spacing | 4.88 | Unknown | User-reported official trial. Scored 0.02 below the `26db76c` cornered-dodge trial and 0.29 below the then-best 5.17. |
+| `4991fa6`, default | **5.17** | 3.81 / +1.36; approximate control, see note | First reported entry to reach 5.17. User confirmed commit and defaults; submission time and run ID unknown. |
+| `c5aeebb`, default | **5.17** | 3.875 / +1.295; approximate candidate, see note | First reported shared-torso run. Submission time and run ID unknown. |
 | `fb85097`, default | 5.10 | 3.33 / +1.77; approximate candidate, see note | Threat spacing with shared aim; user-reported score. Submission time and run ID unknown. |
 | `37d1a1d`, default | 5.06 | 8.50 / −3.44; approximate candidate, see note | Combat cube restraint; user-reported score. Submission time and run ID unknown. |
 | `ded4a9c`, default | 4.81 | Unknown | Squad cover and weapon readiness; user-reported score. No local placement screen, submission time or run ID recorded. |
@@ -40,7 +42,7 @@ The best FFA candidate is **undetermined**. The gun-aim candidate's local FFA sc
 
 ## Supply drops and late-circle practice play
 
-The packaged candidate uses the gun aim and movement settings from the earlier 5.17 entry (`4991fa6`). When squad play is active and there is no immediate danger, the bot values reachable supply drops more highly as its health falls. It estimates travel, landing and capture time against the zone deadline and holds inside the ring. When the next radius reaches 140 m with more than three mechs alive, it switches to selective engagement. At three remaining it resumes squad combat. The Dockerfile enables this with `BOT_LATE_HIDE=1`, `BOT_NAV_METHOD=legacy` and `BOT_GUN_AIM_CHECK=legacy`.
+The scored commit `c68975862d2b` used the gun aim and movement settings from the earlier 5.17 entry (`4991fa6`). When squad play is active and there is no immediate danger, the bot values reachable supply drops more highly as its health falls. It estimates travel, landing and capture time against the zone deadline and holds inside the ring. When the next radius reaches 140 m with more than three mechs alive, it switches to selective engagement. At three remaining it resumes squad combat. That commit shipped with `BOT_LATE_HIDE=1`, `BOT_NAV_METHOD=legacy` and `BOT_GUN_AIM_CHECK=legacy`.
 
 | Squad-proxy panel | Official 5.17 build | Drops only | Drops and late-circle play | Also rush laser |
 | --- | ---: | ---: | ---: | ---: |
@@ -50,7 +52,9 @@ The packaged candidate uses the gun aim and movement settings from the earlier 5
 
 The final 16 seeds were fresh for the champion and laser variant. The simpler candidate ran afterward in a separate block on those same starts. Its mean paired gain was +0.38 with a 95% seed-bootstrap interval of [-0.69, 1.62]. On that panel the simpler candidate recorded zero captures and zero late or invalid replies. It captured two drops in the 12-seed screen. The three panels support an official trial of the combined policy. Individual gains cannot be attributed to captures alone.
 
-The optional `BOT_LASER_RUSH=1` variant scans for lasers when calm, prioritizes reachable lasers and boosts toward them above 60 energy. It acquired a laser within 30 seconds in 9 of 16 validation matches versus 4 of 16 for the champion, but lost 0.56 placement points per match on that panel. It stays off in the packaged candidate. The official best remains 5.17 until a new official result is available.
+The optional `BOT_LASER_RUSH=1` variant scans for lasers when calm, prioritizes reachable lasers and boosts toward them above 60 energy. It acquired a laser within 30 seconds in 9 of 16 validation matches versus 4 of 16 for the champion, but lost 0.56 placement points per match on that panel. It stays off in the packaged candidate. The official score for `c68975862d2b` was **5.17**.
+
+The next practice candidate combines these supply-drop and late-circle tactics with the shared-torso gun check from `c5aeebba81a5`. Its Dockerfile selects `BOT_GUN_AIM_CHECK=actual`. The official score for this combination is pending.
 
 All panels used simulator `e322ffe`. Local raw evidence is in `mech-testing/tactics-screen-422715/`, `mech-testing/tactics-image-panel/` and `mech-testing/tactics-validation-422890/` (the later comparison is under `drops/`).
 
@@ -63,7 +67,7 @@ The initial order is recovery, farming, positioning, aiming, and navigation; tra
 | P01 | 1. [Recovery and disengagement](practice-improvement-plan.md#p01-recovery-and-disengagement) | Survive repeat encounters by reaching cover and allowing health regeneration. | Shared vision and pursuit prevent a safe break; retreat can expose rear armor. | Official 5.04; inconclusive versus timing noise; [record](#p01-first-recovery-screen) |
 | P02 | 2. [Efficient farming](practice-improvement-plan.md#p02-efficient-farming) | Acquire damage, health, upgrades, and useful weapons early at favorable cost. | Farming delays kills and costs health or zone time. | Cube-restraint test 5.06; [record](#p02-split-screen) |
 | P03 | 3. [Anti-squad positioning](practice-improvement-plan.md#p03-anti-squad-positioning) | Limit simultaneous enemy firing angles while retaining our own opportunities to deal damage. | Cover can block our shots, permit encirclement, or delay kills. | Cover/readiness test 4.81; [record](#official-positioning-candidate) |
-| P04 | 4. [Aiming and kill conversion](practice-improvement-plan.md#p04-aiming-and-kill-conversion) | Land more shots and finish reachable threats to shorten fights. | Prediction errors or target fixation can reduce damage and increase exposure. | Shared-aim test 5.17; [record](#official-shared-aim-candidate) |
+| P04 | 4. [Aiming and kill conversion](practice-improvement-plan.md#p04-aiming-and-kill-conversion) | Land more shots and finish reachable threats to shorten fights. | Prediction errors or target fixation can reduce damage and increase exposure. | Shared-aim runs 5.17 and 5.23; [record](#official-shared-aim-candidate) |
 | P05 | 5. [Navigation and zone pressure](practice-improvement-plan.md#p05-navigation-and-zone-pressure) | Reduce exposure and zone damage with better movement decisions. | Spacing can reduce damage dealt; cover or early rotation can delay kills. | Spacing scored 5.10 officially; [record](#p05-navigation-probes-and-comparison) |
 
 The previous [shared-torso gun-aim experiment](experiments-history.md#candidate-shared-torso-gun-aim) was locally inconclusive. Its squad comparison had asymmetric late/invalid responses; its FFA comparison is not evidence of practice improvement. Its official test tied the best reported score, which does not establish a performance difference.
@@ -106,7 +110,7 @@ The previous [shared-torso gun-aim experiment](experiments-history.md#candidate-
 
 ### Official shared-aim candidate
 
-`c5aeebb` returns positioning, farming and recovery to `legacy` and enables `BOT_GUN_AIM_CHECK=actual` by default. It suppresses a gun trigger when the final shared torso command is aiming elsewhere for the laser or mortar. Hypothesis: avoid wasting ammunition; risk: a later physics tick could align, so withheld fire can reduce damage. The prior local screen is inconclusive and timing-confounded. Protocol replay passed on this host with no late replies. Official score **5.17**, user-reported; time and run ID unknown. It ties the earlier champion; the official tie rule favors the earlier entry. A tie does not prove behavioral equivalence or a benefit.
+`c5aeebb` returns positioning, farming and recovery to `legacy` and enables `BOT_GUN_AIM_CHECK=actual` by default. It suppresses a gun trigger when the final shared torso command is aiming elsewhere for the laser or mortar. Hypothesis: avoid wasting ammunition; risk: a later physics tick could align, so withheld fire can reduce damage. The prior local screen is inconclusive and timing-confounded. Protocol replay passed on this host with no late replies. The user reported **5.17 on the first run** and **5.23 on the second run** of the same commit. Submission times and run IDs are unknown.
 
 1. Start from a specific trace, official result, or protocol mechanic. State the tactical alternative, affected situations, expected placement mechanism, counter-hypothesis, and where simulator behavior may not transfer.
 2. Challenge the premise in a second reasoning pass. Select a small discriminating scenario and define the decision before looking at results. Prioritize expected placement impact, frequency, transferability, cost, and uncertainty.
