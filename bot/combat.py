@@ -250,7 +250,7 @@ def assess_combat(state, obs, squad, late, hp):
         recent=t-state.hits.get(a['id'],-100)<(6 if squad else 4)
         closing=((a['vel'][0]-me['vel'][0])*(p[0]-a['pos'][0])+(a['vel'][1]-me['vel'][1])*(p[1]-a['pos'][1]))/max(1,d)
         engage=d<60 or recent or obs['alive']<=2 or (a.get('hp',1400)<350 and d<120) or (aimed and a.get('charging') and d<120)
-        if squad: engage=engage or late or (closing>3 and d<180) or (aimed and d<190) or (a.get('hp',1400)<.4*a.get('max_hp',1400) and d<170)
+        if squad: engage=engage or late or (closing>3 and d<180) or (aimed and d<190) or (a.get('hp',1400)<.4*a.get('max_hp',1400) and d<160)
         tr['engage']=engage
         if engage or t-state.hits.get(a['id'],-100)<4: danger=True
         if engage or (tr['los'] and d<150): crowd+=1
@@ -258,7 +258,7 @@ def assess_combat(state, obs, squad, late, hp):
         if not engage or not tr['los'] or d>(240 if squad else 215): continue
         cost=d+(.18 if squad else 60/1400)*a.get('hp',1400)
         if squad and a['id']==state.target_id and t-state.target_at<2: cost-=200
-        if squad and a.get('hp',1400)<=.3*a.get('max_hp',1400): cost-=200
+        if squad and a.get('hp',1400)<=.3*a.get('max_hp',1400): cost-=220
         if recent: cost-=40
         if closing>3: cost-=15
         choices.append((cost,a['id'],a))
