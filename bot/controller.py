@@ -9,6 +9,7 @@ from .combat import assess_combat, apply_weapon_control
 from .loadout import choose_loadout, choose_objective
 from .movement import Movement
 from .positional_field import PositionalField
+from .corridor import FightCorridor
 from .world import update_perception
 class Controller:
     def __init__(self,hello):
@@ -20,6 +21,7 @@ class Controller:
         self.target_id=None; self.target_at=-100.; self.loot_id=None; self.loot_since=0; self.bad={}
         self.movement=Movement(self.world,self.cfg,self.rng)
         self.field = PositionalField(self.world) if os.getenv('BOT_POSITIONAL_FIELD') == '1' else None
+        self.corridor = FightCorridor(self.field) if self.field and os.getenv('BOT_FIGHT_CORRIDOR') == '1' else None
         self.npc_hurt=-100.; self.npc_bearing=None; self.npc_id=None
         self.hurt_bearing=0.
         self.last_aim=[0.,0.]
@@ -62,6 +64,8 @@ class Controller:
             self.field.hear(obs)
             if not field_eligible or shell or t < self.movement.unstuck_until:
                 self.field.key = None
+        if self.corridor is not None and (not field_eligible or shell or t < self.movement.unstuck_until):
+            self.corridor.clear()
         recovery_move=None
         if self.recovery_enabled and squad:
             if self.recovery_since is not None and (hp>=.8 or urgent or t-self.recovery_since>=10):
@@ -152,6 +156,12 @@ class Controller:
                 if not danger and t-self.last_hurt>6:
                     factor=min(1.,4.6/me['stats']['walk_speed'])
                     action['move']=[v*factor for v in action['move']]
+        if (field_eligible and self.corridor is not None and not shell and not self.retreat
+                and not finishing and mode in ('fight', 'positional-field', 'corner-duel')):
+            step = self.corridor.choose(self, obs, target, action['move'])
+            if step is not None:
+                action['move'] = step
+                mode = 'fight-corridor'
         self.movement.apply_evasion_and_recovery(obs,action,mode)
         apply_weapon_control(self,obs,action,target,foe,squad)
         if (self.laser_rush and not self.ffa and mode in ('idle', 'loot', 'home') and target is None
