@@ -111,36 +111,22 @@ class FightCorridor:
         incoming = list(threats)
         if target_reach > 0:
             incoming.append((target_id,target_muzzle,target_reach,1.))
-        walk_cache = {}
-        shot_cache = {}
-        danger_cache = {}
-
-        def walk(a,b):
-            key_ = (tuple(a[:2]),tuple(b[:2]))
-            if key_ not in walk_cache:
-                walk_cache[key_] = world.line_walkable(a,b)
-            return walk_cache[key_]
 
         def margin(point, elapsed):
             cx,cy,r = zone_at(state.hold,zone,now+elapsed)
             return r-math.hypot(point[0]-cx,point[1]-cy)-radius
 
         def shot(point):
-            if point not in shot_cache:
-                muzzle = (*point,world.walk_at(*point)+me['stats']['muzzle_height'])
-                shot_cache[point] = math.dist(point,target_pos[:2]) <= reach*.96 and world.shot_clear(muzzle,center)
-            return shot_cache[point]
+            muzzle = (*point,world.walk_at(*point)+me['stats']['muzzle_height'])
+            return math.dist(point,target_pos[:2]) <= reach*.96 and world.shot_clear(muzzle,center)
 
         def danger(point):
-            if point in danger_cache:
-                return danger_cache[point]
             chest = (*point,world.walk_at(*point)+me['stats']['height']*.6)
             value = incoming_risk(world,point,chest,target_pos,incoming)
             for origin,yaw,width,weight in sectors:
                 if point != origin:
                     err = abs(angle_diff(math.atan2(point[1]-origin[1],point[0]-origin[0]),yaw))
                     value += .25*weight*max(0.,1-err/width)
-            danger_cache[point] = value
             return value
 
         def exit_ok(goal, elapsed):
@@ -150,14 +136,14 @@ class FightCorridor:
             else: dx,dy=dx/norm,dy/norm
             for x,y in ((dx,dy),(-dy,dx),(dy,-dx)):
                 q=(goal[0]+8*x,goal[1]+8*y)
-                if margin(q,elapsed+3)>0 and walk(goal,q):
+                if margin(q,elapsed+3)>0 and world.line_walkable(goal,q):
                     return True
             return False
 
         def valid_route(route):
             a=start; elapsed=0.; samples=[]
             for b in route:
-                if time.perf_counter() >= deadline or not walk(a,b): return None
+                if time.perf_counter() >= deadline or not world.line_walkable(a,b): return None
                 length=math.dist(a,b); elapsed+=length/speed
                 for f in (.5,1.):
                     q=(a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f)
@@ -189,7 +175,7 @@ class FightCorridor:
         # Evaluate the movement actually selected by the baseline controller.
         mag=math.hypot(*baseline_move)
         base_end=(start[0]+baseline_move[0]*speed, start[1]+baseline_move[1]*speed)
-        if mag < .01 or not walk(start,base_end): base_end=start
+        if mag < .01 or not world.line_walkable(start,base_end): base_end=start
         midpoint=((start[0]+base_end[0])*.5,(start[1]+base_end[1])*.5)
         base=value([midpoint,base_end],1.)
         best=base+.35; chosen=None; examined=0
@@ -199,7 +185,7 @@ class FightCorridor:
             if distance < 4 or distance > 40: continue
             examined+=1
             route=[point]
-            if not walk(start,point):
+            if not world.line_walkable(start,point):
                 if not hasattr(world,'path') or time.perf_counter() >= deadline-.0005: continue
                 cells,complete=world.path(start,point,budget_s=max(0.,(deadline-time.perf_counter())*.45))
                 if not complete or len(cells)<2: continue

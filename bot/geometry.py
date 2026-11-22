@@ -180,34 +180,6 @@ FIT_HEIGHT = 9.
 FIT_LEVELS = 20
 
 
-def _ray_cells(a, b):
-    """Conservatively enumerate 16 m grid cells touched by a 2D segment."""
-    x,y=math.floor(a[0]/16),math.floor(a[1]/16)
-    end_x,end_y=math.floor(b[0]/16),math.floor(b[1]/16)
-    dx,dy=b[0]-a[0],b[1]-a[1]
-    sx=1 if dx>0 else -1 if dx<0 else 0
-    sy=1 if dy>0 else -1 if dy<0 else 0
-    tx=((x+(1 if sx>0 else 0))*16-a[0])/dx if sx else math.inf
-    ty=((y+(1 if sy>0 else 0))*16-a[1])/dy if sy else math.inf
-    inc_x=16/abs(dx) if sx else math.inf
-    inc_y=16/abs(dy) if sy else math.inf
-    if x==end_x: tx=math.inf
-    if y==end_y: ty=math.inf
-    yield x,y
-    while x!=end_x or y!=end_y:
-        if abs(tx-ty)<1e-12:
-            yield x+sx,y
-            yield x,y+sy
-            x+=sx; y+=sy; tx+=inc_x; ty+=inc_y
-        elif tx<ty:
-            x+=sx; tx+=inc_x
-        else:
-            y+=sy; ty+=inc_y
-        if x==end_x: tx=math.inf
-        if y==end_y: ty=math.inf
-        yield x,y
-
-
 class Arena:
     def __init__(self, directory, use_cache=True):
         path=Path(directory)/'v2'
@@ -311,13 +283,8 @@ class Arena:
 
     def shot_clear(self,a,b):
         x0,x1=sorted((a[0],b[0])); y0,y1=sorted((a[1],b[1])); candidates=set()
-        left,right=math.floor(x0/16),math.floor(x1/16)
-        bottom,top=math.floor(y0/16),math.floor(y1/16)
-        if (right-left+1)*(top-bottom+1)>16:
-            for cell in _ray_cells(a,b): candidates.update(self.grid.get(cell,()))
-        else:
-            for gx in range(left,right+1):
-                for gy in range(bottom,top+1): candidates.update(self.grid.get((gx,gy),()))
+        for gx in range(math.floor(x0/16),math.floor(x1/16)+1):
+            for gy in range(math.floor(y0/16),math.floor(y1/16)+1): candidates.update(self.grid.get((gx,gy),()))
         if any(self._ray_prism(self.prisms[i],a,b) for i in candidates): return False
         if a[2]<self.ground(a[0],a[1]): return False
         dx,dy,dz=(b[i]-a[i] for i in range(3)); length=math.hypot(dx,dy); t=0.
