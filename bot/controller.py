@@ -19,7 +19,7 @@ class Controller:
         self.npc_hurt=-100.; self.npc_bearing=None; self.npc_id=None
         self.hurt_bearing=0.
         self.last_aim=[0.,0.]
-        self.recovery_enabled=os.getenv('BOT_SQUAD_RECOVERY','legacy')=='cover'
+        self.recovery_enabled=os.getenv('BOT_SQUAD_RECOVERY','cover')=='cover'
         self.recovery_since=None; self.recovery_cooldown=-100.
 
     def act(self,obs):

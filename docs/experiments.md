@@ -9,12 +9,15 @@ Practice scores are mean placement points; local simulator results are hypothese
 | Commit / settings | Score | Squad-proxy mean / official minus proxy | Status / provenance |
 | --- | ---: | --- | --- |
 | `4991fa6`, default | **5.17** | 3.81 / +1.36; approximate control, see note | Best reported official entry and current working champion. User confirmed commit and defaults; submission time and run ID unknown. |
+| `9ceca70`, presumed default | 5.06 | 5.75 / −0.69; approximate first control, see note | User reported current repository result; recovery defaults to legacy. Submission time, run ID, and environment overrides unknown. |
 | `184bb55`, default | 4.88 | 3.81 / +1.07; approximate control, see note | Previously reported official baseline; submission time and run ID unknown. |
 | `2646e82` | 2.92 | 3.19 / −0.27 | Commit inferred from timestamp. |
 | `9a73729` | 2.71 | 3.06 / −0.35 | Reported baseline. |
 | `a528856` | 2.56 | Unknown | Commit association unverified. |
 
 The comparison is **official score minus local squad-proxy mean**, not a prediction error against identical matches. The 3.81 control used `184bb55` with a dirty experimental patch and `BOT_GUN_AIM_CHECK=legacy`, simulator `e322ffe`, seeds 420100–420115 (16 matches); it approximates both default policies but is not a verified exact-commit run for either, and had 14 late/invalid responses. The 3.19 and 3.06 means used simulator `e322ffe` and seeds 420000–420015 (16 matches). Official and proxy seeds and opponents differ, and local timing varies; these differences do not establish predictive accuracy. See [calibration and raw-result details](experiments-history.md#squad-proxy-calibration-against-official-practice).
+
+The 5.75 proxy control used the P01 dirty candidate tree based on `e224892`, with recovery disabled and seeds 420200–420215; it was not an exact-commit run of `9ceca70`. A repeat of that control averaged 5.00, illustrating timing variation. The 5.06 result is attributed to `9ceca70` as the current repository implementation, assuming default settings; confirm the submitted commit and environment if available.
 
 `4991fa6` defaults to the integrated policy with `BOT_GUN_AIM_CHECK=legacy`. Its opt-in gun-aim change was **not active** in the reported 5.17 result; do not attribute the change in score to it. Fixed practice seeds do not eliminate runtime timing noise. The 5.17 versus 4.88 score difference has no paired match-level uncertainty.
 
@@ -28,7 +31,7 @@ The initial order is recovery, farming, positioning, aiming, and navigation; tra
 
 | ID | Priority / candidate | Expected mechanism | Main risk | Status |
 | --- | --- | --- | --- | --- |
-| P01 | 1. [Recovery and disengagement](practice-improvement-plan.md#p01-recovery-and-disengagement) | Survive repeat encounters by reaching cover and allowing health regeneration. | Shared vision and pursuit prevent a safe break; retreat can expose rear armor. | Opt-in screen inconclusive; [record](#p01-first-recovery-screen) |
+| P01 | 1. [Recovery and disengagement](practice-improvement-plan.md#p01-recovery-and-disengagement) | Survive repeat encounters by reaching cover and allowing health regeneration. | Shared vision and pursuit prevent a safe break; retreat can expose rear armor. | Local screen inconclusive; default enabled for requested official test; [record](#p01-first-recovery-screen) |
 | P02 | 2. [Efficient farming](practice-improvement-plan.md#p02-efficient-farming) | Acquire damage, health, upgrades, and useful weapons early at favorable cost. | Farming delays kills and costs health or zone time. | Proposed |
 | P03 | 3. [Anti-squad positioning](practice-improvement-plan.md#p03-anti-squad-positioning) | Limit simultaneous enemy firing angles while retaining our own opportunities to deal damage. | Cover can block our shots, permit encirclement, or delay kills. | Proposed |
 | P04 | 4. [Aiming and kill conversion](practice-improvement-plan.md#p04-aiming-and-kill-conversion) | Land more shots and finish reachable threats to shorten fights. | Prediction errors or target fixation can reduce damage and increase exposure. | Proposed |
@@ -38,11 +41,11 @@ The previous [shared-torso gun-aim experiment](experiments-history.md#candidate-
 
 ### P01 first recovery screen
 
-- Parent `e224892` (documentation-only successor to `4991fa6`); dirty bot hash `b4bf4835573443275996ba3ed90be92863d81f4eb77806f110e8833b6c3906d7`, diff SHA-256 `d8e9ccb6d4a796ab8d9887644a8bcbee7c0c4caf5e1faf7a626ca4bb35b650c8`; saved local patch `mech-testing/p01-recovery-candidate.diff`. Factor `BOT_SQUAD_RECOVERY=legacy` is default; `cover` enables the candidate.
+- Parent `e224892` (documentation-only successor to `4991fa6`); dirty bot hash `b4bf4835573443275996ba3ed90be92863d81f4eb77806f110e8833b6c3906d7`, diff SHA-256 `d8e9ccb6d4a796ab8d9887644a8bcbee7c0c4caf5e1faf7a626ca4bb35b650c8`; saved local patch `mech-testing/p01-recovery-candidate.diff`. The local experiment used `BOT_SQUAD_RECOVERY=legacy` as control and `cover` as candidate. The working tree now defaults to `cover` for the next official test; `legacy` still selects the control.
 - Baseline traces for seeds 420100, 420101 and 420108 show periods below 55% HP and firing during those periods; HP also increased during all three matches, so the traces do not establish an absence of healing. Raw traces: `mech-testing/p01-baseline-{420100,420101,420108}.jsonl`.
 - Candidate sustains a cover retreat for up to 10 seconds, holds fire while recovering, and yields to an urgent zone, a threat within 35 m, a finishing opportunity, or unavailable cover. Hypothesis: a longer damage-free interval enables regeneration and improves placement. Counter-hypothesis: lost damage, shared enemy vision and exposure while retreating outweigh healing. Focused controller scenarios pass; they do not establish actual healing in a match. An already charged laser can release when its trigger is dropped.
 - Squad proxy `e322ffe`, seeds 420200–420215, 16 matches per pass, run in order baseline → candidate → repeated baseline: means **5.75 → 5.125 → 5.00**, candidate minus first **−0.625 ± 0.584 SE**, repeated control minus first **−0.75 ± 0.423 SE**, candidate minus repeated control **+0.125 ± 0.407 SE**. Kills: 3.69 / 2.88 / 2.94; mean survival: 211.08 / 204.00 / 202.92 s; late/invalid: 2/2, 1/1, 2/2. Raw result: `mech-testing/p01-recovery-squad-420200.json`. Sequential ordering and timing-sensitive searches confound comparisons; matched seeds can diverge.
-- Decision: **investigate, do not promote or submit**. Capture candidate and control traces with recovery-state and healing-window measurements, then retest on rotated seeds with order balanced if the mechanism occurs often enough. No official P01 result; FFA deferred.
+- Decision: **official test requested**; recovery is enabled by default in the working tree for the next submission. The 5.06 result did not test recovery if submitted with defaults. Capture candidate and control traces with recovery-state and healing-window measurements for further investigation. No official P01 result yet; FFA deferred.
 
 ## Operating loop
 
