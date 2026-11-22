@@ -10,6 +10,11 @@ the original aim if neither ray clears. The upper-body gun pitch tolerance is
 narrower; shared-torso checks still apply. Risks include approximate geometry,
 moving targets and extra ray checks.
 
+The user reported **5.20** in builders-4 for commit `6e0c84c`, compared with
+the aim-only `26c9ad6` result of 5.42. The two official runs used fresh random
+seeds; this observed difference of −0.22 does not by itself establish a causal
+regression. Keep the 5.42 aim-only entry as the stronger reported result.
+
 Two eight-seed sequential squad-proxy screens on 424300–424315 averaged
 5.125 with the trial versus 4.3125 without it. The first panel was 4.875 versus
 4.625; the second was 5.375 versus 4.0, with a +12 difference on one seed and
@@ -81,6 +86,7 @@ Ten focused behavior checks passed. The packaged protocol check passed with 298 
 | Commit / settings | Score | Squad-proxy mean / official minus proxy | Status / provenance |
 | --- | ---: | --- | --- |
 | `26c9ad6`, dev aim only | **5.42** | — | User-reported builders-4 score; run ID and timestamp unknown. |
+| `6e0c84c`, partial-cover aim | 5.20 | — | User-reported builders-4 score; run ID and timestamp unknown. |
 | `e9de118`, dev reload only | 4.96 | — | User-reported builders-3 score; run ID and timestamp unknown. |
 | `c776cb3`, dev aim and reload; finish approach and reload cover off | 5.15 | — | User-reported official score; run ID and timestamp unknown. |
 | `67f32ba`, finish approach | 5.08 | — | User-reported official practice score. |
