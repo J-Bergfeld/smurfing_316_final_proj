@@ -49,7 +49,8 @@ class Controller:
             self.movement.cover = None
             self.movement.home_xy = None
         self.update_world(obs); me=obs['self']; p=me['pos']; t=obs['t']; z=obs['zone']; hp=me['hp']/max(1,me['max_hp'])
-        practice = not self.ffa and t > 20
+        # This submission is explicitly for the cooperative practice field.
+        practice = True
         hide = practice and self.late_hide and z['next_radius'] <= 140 and obs['alive'] > 3
         squad = practice and not hide
         late = (z['next_radius'] <= 70 and not hide) or obs['alive'] <= 3

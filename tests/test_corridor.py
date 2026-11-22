@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from bot.corridor import FightCorridor
+from bot.corridor import FightCorridor, incoming_risk, potential_cover
 from bot.controller import Controller
 from bot.geometry import Arena as RealArena
 from bot.positional_field import PositionalField
@@ -141,5 +141,44 @@ class CorridorTests(unittest.TestCase):
         bot.movement.navigate = Mock(return_value=[1,0])
         bot.act(obs)
         self.assertEqual(bot.mode, 'zone')
+
+    def test_selected_target_and_rear_attackers_contribute_risk(self):
+        self.arena.cover = False
+        threats = [(7,(80,0,7),230,1.), (8,(-70,0,7),230,1.)]
+        self.assertEqual(incoming_risk(self.arena,(0,0),(0,0,5),[80,0,0],threats), 2.5)
+        self.assertEqual(incoming_risk(self.arena,(0,0),(0,0,5),[80,0,0],threats[:1]), 1.)
+
+    def test_cover_score_is_bounded_and_safe_at_map_edges(self):
+        self.arena.baked = {'nx':2,'ny':1,'clearance':[0,6]}
+        self.arena.cell = lambda x,y: (int(x),int(y))
+        self.assertEqual(potential_cover(self.arena,(0,0)),1.)
+        self.assertEqual(potential_cover(self.arena,(1,0)),0.)
+        self.assertEqual(potential_cover(self.arena,(-1,0)),0.)
+
+    def test_near_wall_preparation_with_only_target(self):
+        self.state.tracks = {}; self.state.attacker_memory = {}
+        self.arena.cover = False
+        self.arena.baked = {'nx':2,'ny':1,'clearance':[0,6]}
+        self.arena.cell = lambda x,y: (0 if y > 4 else 1,0)
+        self.assertEqual(self.corridor.choose(self.state,self.obs,self.target,[1,0]),[0.,1.])
+
+    def test_practice_mode_survives_uncredited_death(self):
+        bot = Controller(HELLO)
+        obs = observation(); obs.update(t=0, tick=0, alive=16)
+        bot.update_world(obs)
+        obs.update(t=30, tick=300, alive=15)
+        for i in range(6):
+            obs['tick'] += 2
+            bot.update_world(obs)
+        self.assertFalse(bot.ffa)
+        with patch.object(bot,'assess_combat',return_value=([],None,None,False,False)) as assess:
+            bot.act(obs)
+        self.assertTrue(assess.call_args.args[1])
+
+    def test_practice_mode_starts_on_first_tick(self):
+        bot = Controller(HELLO); obs = observation()
+        with patch.object(bot,'assess_combat',return_value=([],None,None,False,False)) as assess:
+            bot.act(obs)
+        self.assertTrue(assess.call_args.args[1])
 
 if __name__ == '__main__': unittest.main()

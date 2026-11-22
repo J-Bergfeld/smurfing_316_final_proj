@@ -6,6 +6,30 @@ from collections import Counter
 from .geometry import angle_diff, zone_at
 
 
+def incoming_risk(world, point, chest, target_pos, attackers):
+    """Estimate visible incoming lines, including rear exposure while aiming."""
+    facing = math.atan2(target_pos[1]-point[1], target_pos[0]-point[0])
+    risk = 0.
+    for _, muzzle, reach, weight in attackers:
+        if math.dist(point,muzzle[:2]) > reach or not world.shot_clear(muzzle,chest):
+            continue
+        bearing = math.atan2(muzzle[1]-point[1], muzzle[0]-point[0])
+        rear = abs(angle_diff(bearing, facing)) > math.pi*.5
+        risk += weight*(1.5 if rear else 1.)
+    return risk
+
+
+def potential_cover(world, point):
+    """Cheap bounded near-wall proxy, not a claim about a hidden shooter."""
+    grid = getattr(world, 'baked', None)
+    if not grid:
+        return 0.
+    x,y = world.cell(*point)
+    if not (0 <= x < grid['nx'] and 0 <= y < grid['ny']):
+        return 0.
+    return max(0., min(1., (6-grid['clearance'][y*grid['nx']+x])/6))
+
+
 class FightCorridor:
     def __init__(self, field):
         self.field = field
@@ -80,6 +104,13 @@ class FightCorridor:
                     (w['kind'] != 'gun' or (w.get('ammo',0)>0 and w.get('reload',0)<=.3))
                     for w in me['weapons'])
         sectors = self.field.sound_sectors(now, [(p,r,w) for _,p,r,w in threats]) if hasattr(self.field,'sound_sectors') else []
+        target_reach = max((state.cfg['weapons'].get(w,{}).get('range',0)
+                            for w in target.get('weapons',[])),default=0)
+        target_muzzle = (*target_pos[:2],target_pos[2]+state.cfg['mech']['muzzle_height']*scale)
+        # Include target fire separately; it is not an additional hunter.
+        incoming = list(threats)
+        if target_reach > 0:
+            incoming.append((target_id,target_muzzle,target_reach,1.))
 
         def margin(point, elapsed):
             cx,cy,r = zone_at(state.hold,zone,now+elapsed)
@@ -91,8 +122,7 @@ class FightCorridor:
 
         def danger(point):
             chest = (*point,world.walk_at(*point)+me['stats']['height']*.6)
-            value = sum(weight for _,p,reach_,weight in threats
-                        if math.dist(point,p[:2]) <= reach_ and world.shot_clear(p,chest))
+            value = incoming_risk(world,point,chest,target_pos,incoming)
             for origin,yaw,width,weight in sectors:
                 if point != origin:
                     err = abs(angle_diff(math.atan2(point[1]-origin[1],point[0]-origin[0]),yaw))
@@ -128,6 +158,7 @@ class FightCorridor:
         def value(samples,elapsed):
             return (-2*sum(danger(q) for q in samples)/len(samples)
                     -(1.5 if ready else .6)*sum(not shot(q) for q in samples)/len(samples)
+                    +.5*potential_cover(world,samples[-1])
                     -.15*elapsed)
 
         if self.route and self.key == key and now < self.until:

@@ -1,4 +1,4 @@
-"""Mech Royale entrypoint. Set BOT_PROFILE=final for free-for-all policy."""
+"""Mech Royale entrypoint; the packaged integrated controller is practice-only."""
 import math
 import os
 import mechfight

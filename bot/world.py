@@ -156,8 +156,6 @@ def update_perception(state,obs):
             state.items.pop(event.get('id'),None)
     state.attacker_memory={ident:when for ident,when in state.attacker_memory.items() if t-when<8}
     if state.initial is None: state.initial=obs['alive']
-    state.unexplained=state.unexplained+1 if state.initial-obs['alive']>len(state.kills) else 0
-    if state.unexplained>=5: state.ffa=True
     z=obs['zone']
     if state.phase!=z['shrink_start'] or t<=z['shrink_start']:
         state.phase=z['shrink_start']; state.hold=(*z['center'],z['radius'])
