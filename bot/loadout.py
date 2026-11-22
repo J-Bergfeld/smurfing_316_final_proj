@@ -67,8 +67,13 @@ def choose_objective(state, obs, hp, danger, squad):
     for ident,(kind,item,when) in candidates:
         d=math.dist(p[:2],item['pos'][:2])
         if d>260 or ident in state.bad and state.bad[ident]>t: continue
+        route_extra=0.
         if kind == 'drops':
-            travel = max(0., d - item['radius'] * .65) * 1.4 / me['stats']['walk_speed']
+            # A blocked direct path is not necessarily unreachable. Penalize
+            # the unknown detour without claiming an exact route length.
+            if d > item['radius'] * .65 and not state.world.line_walkable(p,item['pos']):
+                route_extra=45.
+            travel = (max(0., d - item['radius'] * .65) + route_extra) * 1.4 / me['stats']['walk_speed']
             wait = max(0., item['lands_in'] - travel)
             if item['holder'] not in (None, state.slot) or wait > 8:
                 continue
@@ -106,8 +111,8 @@ def choose_objective(state, obs, hp, danger, squad):
         free=state.world.nearest_free(state.world.cell(*item['pos'][:2]))
         if free is None or (state.world.baked and state.world.baked['component'][free[1]*state.world.baked['nx']+free[0]]!=state.world.baked['main']): continue
         if math.dist(item['pos'][:2],z['center'])>z['radius']-6: continue
-        if t+d*1.4/me['stats']['walk_speed']+5>zone_deadline(state.hold,z,*item['pos'][:2],6): continue
-        cost=d+18
+        if t+(d+route_extra)*1.4/me['stats']['walk_speed']+5>zone_deadline(state.hold,z,*item['pos'][:2],6): continue
+        cost=d+route_extra+18
         if squad and getattr(state,'farming_policy','legacy') in ('selective','route'):
             if d<100 and not state.world.line_walkable(p,item['pos']): cost+=45
             if kind=='npc':
