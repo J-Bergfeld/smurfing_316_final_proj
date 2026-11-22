@@ -73,6 +73,9 @@ The default policy uses a Python-generated navigation cache for the included
 arena and a Python random generator seeded from the match. The cache is used
 only when its manifest matches the arena files; other maps use approximate
 fallback geometry until their cache is built.
+The integrated navigator searches for a clear ground landing when leaving an
+elevated surface; set `BOT_ROOF_DESCENT=0` to disable this experimental descent
+recovery for comparison. It does not seek roofs or plan climbs.
 
 To rebuild and validate the cache for the included arena without changing the bundled copy:
 

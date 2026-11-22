@@ -92,6 +92,60 @@ class Movement:
         self.home_xy=None; self.home_at=-100.
         self.stuck_since=0.; self.unstuck_until=0.; self.unstuck_dir=(0.,0.)
         self.action_deadline=0.
+        self.roof_exit=None; self.roof_exit_at=-100.; self.roof_exit_watch=None; self.roof_exit_goal=None
+        self.descending=False
+        self.roof_exit_bans={}
+
+    def roof_descent(self, me, goal, t):
+        """Find a clear, supported route to a ground landing from a roof.
+
+        This deliberately handles descent only. It does not try to route across
+        other roofs or decide whether a roof is a good tactical position.
+        """
+        p=me['pos']; radius=me['stats']['radius']; height=me['stats']['height']
+        if not me['grounded']:
+            if self.roof_exit and t-self.roof_exit_at < 4:
+                x,y=self.roof_exit; d=math.hypot(x-p[0],y-p[1])
+                return [(x-p[0])/d,(y-p[1])/d] if d>1 else [0.,0.]
+            return None
+        if p[2]-self.world.ground(*p[:2]) < 3 or (len(goal)>2 and goal[2] >= p[2]-3):
+            self.roof_exit=None; self.roof_exit_watch=None
+            return None
+        if self.roof_exit_watch and t-self.roof_exit_watch[0] >= 1.5:
+            _,old=self.roof_exit_watch
+            if math.dist(p[:2],old)<1.2 and self.roof_exit:
+                self.roof_exit_bans[self.world.cell(*self.roof_exit)]=t+25
+                self.roof_exit=None
+            self.roof_exit_watch=None
+        if self.roof_exit and (t-self.roof_exit_at>4 or math.dist(goal[:2],self.roof_exit_goal)>12
+                               or not self.world.free_cell(self.world.cell(*self.roof_exit))):
+            self.roof_exit=None
+        if self.roof_exit is None:
+            best=None; best_score=math.inf
+            base=math.atan2(goal[1]-p[1],goal[0]-p[0])
+            deadline=min(self.action_deadline,time.perf_counter()+.005)
+            for offset in (0,1,-1,2,-2,3,-3,4,-4,5,-5,6,-6,7,-7,8):
+                if time.perf_counter()>=deadline: break
+                a=base+offset*math.pi/8; dx,dy=math.cos(a),math.sin(a)
+                for step in range(1,17):
+                    if time.perf_counter()>=deadline: break
+                    x,y=p[0]+step*3*dx,p[1]+step*3*dy
+                    if not self.world.inside(x,y) or not self.world.standable(x,y,p[2],radius,height): break
+                    cell=self.world.cell(x,y)
+                    if self.world.free_cell(cell) and self.world.walk_at(x,y)<p[2]-3:
+                        if self.roof_exit_bans.get(cell,0)>t: break
+                        landing=self.world.walk_at(x,y)
+                        if not all(self.world.standable(x,y,landing+(p[2]-landing)*i/4,radius,height)
+                                   for i in range(5)):
+                            continue
+                        score=step*3+math.hypot(goal[0]-x,goal[1]-y)
+                        if score<best_score: best,best_score=(x,y),score
+                        break
+            self.roof_exit=best; self.roof_exit_at=t; self.roof_exit_goal=goal[:2]
+        if self.roof_exit is None: return [0.,0.]
+        if self.roof_exit_watch is None: self.roof_exit_watch=(t,p[:2])
+        x,y=self.roof_exit; d=math.hypot(x-p[0],y-p[1])
+        return [(x-p[0])/d,(y-p[1])/d] if d>1 else [0.,0.]
 
     def apply_evasion_and_recovery(self, obs, action, mode):
         """Blend evasive movement and update stuck recovery."""
@@ -105,7 +159,7 @@ class Movement:
                 action['move'] = blended
             boost_dodge = laser or (self.cornered_boost and mode == 'cornered' and me['grounded'])
             if boost_dodge and me['energy']>25: action['boost']=True
-        if any(action['move']) and math.hypot(*me['vel'][:2])<1.2 and me['grounded']:
+        if not self.descending and any(action['move']) and math.hypot(*me['vel'][:2])<1.2 and me['grounded']:
             if self.stuck_since<0: self.stuck_since=t
             elif t-self.stuck_since>.7:
                 angle = self.rng.random() * math.tau
@@ -142,6 +196,11 @@ class Movement:
     def navigate(self,me,goal,t):
         p=me['pos']; dx,dy=goal[0]-p[0],goal[1]-p[1]; d=math.hypot(dx,dy)
         if d<.8: return [0.,0.]
+        if os.getenv('BOT_ROOF_DESCENT','1') == '1' and hasattr(self.world, 'ground'):
+            descent=self.roof_descent(me,goal,t)
+            if descent is not None:
+                self.descending=True
+                return descent
         unit=lambda point:[(point[0]-p[0])/max(1e-9,math.dist(p[:2],point[:2])),(point[1]-p[1])/max(1e-9,math.dist(p[:2],point[:2]))]
         if d<45 and self.world.line_walkable(p,goal): return unit(goal)
         if not self.path or self.path_goal is None or math.dist(goal[:2],self.path_goal)>5 or t-self.path_at>2.5:

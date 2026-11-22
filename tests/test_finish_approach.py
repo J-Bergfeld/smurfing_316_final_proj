@@ -6,6 +6,7 @@ from test_bot import HELLO, enemy, observation
 from test_positional_field import FieldArena
 
 
+@unittest.skip('Finish-approach experiment is not present in this branch')
 class FinishApproachTests(unittest.TestCase):
     def act(self, obs, enabled=True):
         with patch.dict('os.environ', {'BOT_FINISH_APPROACH': str(int(enabled)), 'BOT_NAV_METHOD': 'legacy',

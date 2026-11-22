@@ -39,6 +39,7 @@ class Controller:
     def act(self,obs):
         self.action_deadline=time.perf_counter()+.027
         self.movement.action_deadline=self.action_deadline
+        self.movement.descending=False
         stats = obs['self']['stats']
         size = (stats['radius'], stats['height'])
         if size != self.body_size:
@@ -48,6 +49,8 @@ class Controller:
             self.movement.unstuck_until = 0.
             self.movement.cover = None
             self.movement.home_xy = None
+            self.movement.roof_exit = None
+            self.movement.roof_exit_watch = None
         self.update_world(obs); me=obs['self']; p=me['pos']; t=obs['t']; z=obs['zone']; hp=me['hp']/max(1,me['max_hp'])
         # This submission is explicitly for the cooperative practice field.
         practice = True
@@ -164,6 +167,8 @@ class Controller:
                 action['move'] = step
                 mode = 'fight-corridor'
         self.movement.apply_evasion_and_recovery(obs,action,mode)
+        if self.movement.descending:
+            action['boost']=False
         apply_weapon_control(self,obs,action,target,foe,squad)
         if (self.laser_rush and not self.ffa and mode in ('idle', 'loot', 'home') and target is None
                 and t - self.last_threat > 3 and t - self.npc_hurt > 3

@@ -6,7 +6,9 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 ## Official practice — builders-4
 
-**Positioning simplification results:** The user reported **4.95** for `e331335` (corner duel off) and **5.08** for `a8a9e91` (positional field off). Each candidate changed only that setting in the `955e6bf` submission runtime, which scored **5.47**. Runs used independent private seeds; the observed differences do not establish causality. Submission times and run IDs were not supplied.
+**Fixed upgrade order:** User reports `7d09a1b` scored **5.35**. It keeps corner duel and the positional field enabled and removes the gun-only magazine priority. Run ID and timestamp were not supplied. The next roof-descent candidate uses this runtime as its comparator; the independent-seed score difference will not establish causality.
+
+**Positional-field follow-up:** User reports `a8a9e91` scored **5.08** with positional field disabled, compared with 5.47 for `955e6bf` and 4.95 for `e331335` with corner duel disabled. These are independent-seed results, not proof of causality. Keep both tactics on for the next test. The next candidate removes the gun-only magazine priority, keeping the fixed upgrade order; it changes only `choose_loadout` on the 5.47 baseline. Earlier magazine comparisons were under the old scorer. Run IDs and timestamps were not supplied.
 
 **Corner-duel follow-up:** User reports `e331335` scored **4.95** with corner duel off on the `955e6bf` baseline, versus 5.47 with it on. These runs use independent private seeds, so the observed −0.52 does not prove the causal effect. Next test keeps corner duel on and disables the positional field alone. Submission time and run ID were not supplied.
 
@@ -15,6 +17,7 @@ Practice scores are mean placement points; local simulator results are hypothese
 | Commit | Configuration | Score |
 | --- | --- | ---: |
 | `955e6bf` | Jack aim, corridor off, early drone off | **5.47** |
+| `7d09a1b` | Fixed upgrade order, positional field and corner duel on | 5.35 |
 | `a8a9e91` | 5.47 baseline, positional field off | 5.08 |
 | `e331335` | 5.47 baseline, corner duel off | 4.95 |
 | `26c9ad6` | Jack aim-only package | 5.42 |

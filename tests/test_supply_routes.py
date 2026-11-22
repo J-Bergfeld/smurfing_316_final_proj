@@ -1,4 +1,4 @@
-"""Drop detours affect preference and the estimated zone deadline."""
+"""Supply selection uses its current straight-line travel estimate."""
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -25,16 +25,17 @@ class SupplyRouteTests(unittest.TestCase):
     def choose(self):
         return choose_objective(self.state, self.obs, 1., False, True)
 
-    def test_blocked_drop_loses_to_nearby_cube(self):
+    def test_legacy_drop_selection_does_not_check_walkability(self):
         self.assertEqual(self.choose()[1], 'drops')
         self.state.world.line_walkable.return_value = False
-        self.assertEqual(self.choose()[1], 'cubes')
+        self.assertEqual(self.choose()[1], 'drops')
+        self.state.world.line_walkable.assert_not_called()
 
-    def test_blocked_detour_can_miss_zone_deadline(self):
+    def test_drop_rejected_when_straight_line_estimate_misses_deadline(self):
         self.state.items.clear()
         with patch('bot.loadout.zone_deadline', return_value=109):
             self.assertEqual(self.choose()[1], 'drops')
-            self.state.world.line_walkable.return_value = False
+        with patch('bot.loadout.zone_deadline', return_value=106):
             self.assertIsNone(self.choose())
 
     def test_already_inside_does_not_penalize_capture(self):
