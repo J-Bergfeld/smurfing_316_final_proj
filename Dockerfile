@@ -1,4 +1,5 @@
 FROM python:3.13-slim
+# Finish-target practice candidate; policy settings are declared below.
 WORKDIR /bot
 COPY main.py mechfight.py ./
 COPY bot ./bot
