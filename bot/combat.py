@@ -280,6 +280,73 @@ def assess_combat(state, obs, squad, late, hp):
         if state.retreat and not swamped and (hp>.8 or (t-state.last_threat>7 and hp>.55)): state.retreat=False
     return seen, target, foe, danger, finishing
 
+def opportunistic_reload(state, obs, action, target):
+    """Reload a low gun magazine during a sustained, safe no-shot window."""
+    def reset():
+        state.opportunistic_reload_window = None
+
+    if os.getenv('BOT_OPPORTUNISTIC_RELOAD') != '1':
+        return
+    me, now = obs['self'], obs['t']
+    guns = [(i, w) for i, w in enumerate(me['weapons'][:2]) if w and w['kind'] == 'gun']
+    if (not target or target.get('kind') != 'mech' or not guns or state.retreat
+            or not me.get('in_zone', False) or now-state.last_hurt < 2):
+        reset(); return
+    slot, gun = guns[0]
+    stats = gun['stats']; ammo = gun.get('ammo', 0)
+    if (not 0 < ammo < stats['mag']*.4 or gun.get('reload', 0) > 0
+            or action.get('fire', [False, False])[slot]):
+        reset(); return
+    horizon = stats['reload'] + .4
+    p = me['pos']; own_v = me.get('vel', [0, 0, 0]); world = state.world
+    # Reject nearby threats, including ones that would close during the reload.
+    # This is not a movement prediction for deciding where to aim.
+    for tr in state.tracks.values():
+        actor = tr['actor']; age = now-tr['seen']
+        if actor['kind'] not in ('mech', 'npc') or age < 0 or age >= 2.5:
+            continue
+        enemy_v = actor.get('vel', [0, 0, 0])
+        rx = actor['pos'][0]-p[0] + enemy_v[0]*age
+        ry = actor['pos'][1]-p[1] + enemy_v[1]*age
+        vx, vy = enemy_v[0]-own_v[0], enemy_v[1]-own_v[1]
+        speed2 = vx*vx+vy*vy
+        near_t = max(0., min(horizon, -(rx*vx+ry*vy)/speed2)) if speed2 > 1e-9 else 0.
+        if math.hypot(rx+vx*near_t,ry+vy*near_t) < 120:
+            reset(); return
+    if any(s.get('dist') == 'near' and s.get('age', 0) < 1
+           and s.get('kind') in ('gun', 'laser', 'laser_charge', 'lightning', 'mortar', 'npc_gun')
+           for s in obs.get('sounds', [])):
+        reset(); return
+    if any(math.dist(p[:2], shot['pos'][:2]) < 80 for shot in obs.get('projectiles', [])):
+        reset(); return
+    pos = target['pos']; vel = target.get('vel', [0, 0, 0])
+    dx, dy = pos[0]-p[0], pos[1]-p[1]
+    vx, vy = vel[0]-own_v[0], vel[1]-own_v[1]
+    speed2 = vx*vx+vy*vy
+    near_t = max(0., min(horizon, -(dx*vx+dy*vy)/speed2)) if speed2 > 1e-9 else 0.
+    if math.hypot(dx+vx*near_t,dy+vy*near_t) < 120:
+        reset(); return
+    gun_range = stats['range']*.96
+    out_of_range = math.hypot(dx+vx*near_t,dy+vy*near_t) > gun_range+3
+    if not out_of_range:
+        # A blocked center ray matters only when the present and projected
+        # intercepts are both blocked, not when the gun is merely unaligned.
+        height = state.cfg['mech']['height']*(1+target.get('cubes', 0)*state.cfg['cubes'].get('size_per_cube', .05))
+        muzzle = [p[0],p[1],p[2]+me['stats']['muzzle_height']]
+        center = [pos[0],pos[1],pos[2]+height*.5]
+        future_muzzle = [muzzle[i]+own_v[i]*horizon for i in range(3)]
+        future_center = [center[i]+vel[i]*horizon for i in range(3)]
+        if (world.shot_clear(muzzle,intercept(muzzle,center,vel,stats['speed']))
+                or world.shot_clear(future_muzzle,intercept(future_muzzle,future_center,vel,stats['speed']))):
+            reset(); return
+    window = getattr(state, 'opportunistic_reload_window', None)
+    if not window or window[0] != target['id'] or now < window[1]:
+        state.opportunistic_reload_window = (target['id'], now)
+    elif now-window[1] >= .4:
+        action['reload'] = True
+        reset()
+
+
 def apply_weapon_control(state, obs, action, target, foe, squad):
     """Choose a defensive target, aim, and update weapon triggers."""
     me=obs['self']; p=me['pos']; t=obs['t']
@@ -313,3 +380,4 @@ def apply_weapon_control(state, obs, action, target, foe, squad):
         distance=math.dist(p[:2],foe['pos'][:2])
         for i,w in enumerate(me['weapons'][:2]):
             if w and w['kind']=='laser' and w.get('cooldown',0)<=.05 and distance<w['stats']['range'] and w['charge']<w['stats']['charge']+w['stats']['hold_s']-.35: action['fire'][i]=True
+    opportunistic_reload(state, obs, action, target)

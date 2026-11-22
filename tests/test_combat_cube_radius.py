@@ -29,9 +29,9 @@ class CombatCubeRadiusTests(unittest.TestCase):
         return self.bot.mode
 
     def test_healthy_detour_boundary(self):
-        self.assertEqual(self.mode_for(59.9), 'fight:cube')
-        self.assertEqual(self.mode_for(60), 'fight')
-        self.assertEqual(self.mode_for(65), 'fight')
+        self.assertEqual(self.mode_for(69.9), 'fight:cube')
+        self.assertEqual(self.mode_for(70), 'fight')
+        self.assertEqual(self.mode_for(75), 'fight')
 
     def test_low_health_threshold_is_unchanged(self):
         self.assertEqual(self.mode_for(39.8, 700), 'fight:cube')

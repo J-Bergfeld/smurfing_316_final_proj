@@ -26,6 +26,7 @@ class Controller:
         self.hurt_bearing=0.
         self.last_aim=[0.,0.]
         self.corner_duel = os.getenv('BOT_CORNER_DUEL') == '1'
+        self.approach_boost = os.getenv('BOT_APPROACH_BOOST') == '1'
         self.supply_drops = os.getenv('BOT_SUPPLY_DROPS', '1') == '1'
         self.slot = hello['slot']
         self.laser_rush = os.getenv('BOT_LASER_RUSH') == '1'
@@ -164,7 +165,7 @@ class Controller:
                 action['move'] = step
                 mode = 'fight-corridor'
         self.movement.apply_evasion_and_recovery(obs,action,mode)
-        if (mode=='fight' and squad and not self.retreat and not action['jump'] and me['grounded'] and hp>.7
+        if (self.approach_boost and mode=='fight' and squad and not self.retreat and not action['jump'] and me['grounded'] and hp>.7
                 and me['energy']>60 and target is not None):
             gun=next((w for w in me['weapons'] if w and w['kind']=='gun'),None)
             dx=target['pos'][0]-p[0]; dy=target['pos'][1]-p[1]; distance=math.hypot(dx,dy)

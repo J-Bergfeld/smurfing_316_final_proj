@@ -7,13 +7,95 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from bot.controller import Controller
-from bot.combat import aim_and_fire
+from bot.combat import aim_and_fire, opportunistic_reload
 from bot.loadout import choose_loadout
 from bot.movement import Movement
 from test_bot import HELLO, enemy, observation
 
 
 class ControllerTests(unittest.TestCase):
+    def test_opportunistic_reload_requires_persistent_safe_no_shot(self):
+        obs=observation(); obs['t']=10
+        gun=obs['self']['weapons'][0]
+        gun.update(kind='gun',ammo=4,reload=0,cooldown=0,stats=HELLO['config']['weapons']['gun'])
+        foe=enemy(235); foe['vel']=[0,0,0]
+        state=SimpleNamespace(retreat=False,last_hurt=-100,tracks={7:{'actor':foe,'seen':10}},
+                              world=Mock(),cfg=HELLO['config'])
+        state.world.shot_clear.return_value=True
+        action={'fire':[False,False]}
+        with patch.dict('os.environ',{'BOT_OPPORTUNISTIC_RELOAD':'1'}):
+            opportunistic_reload(state,obs,action,foe)
+            self.assertNotIn('reload',action)
+            obs['t']=10.5; state.tracks[7]['seen']=10.5
+            opportunistic_reload(state,obs,action,foe)
+            self.assertTrue(action['reload'])
+
+    def test_opportunistic_reload_rejects_danger_and_interrupted_windows(self):
+        obs=observation(); obs['t']=10
+        gun=obs['self']['weapons'][0]
+        gun.update(kind='gun',ammo=4,reload=0,cooldown=0,stats=HELLO['config']['weapons']['gun'])
+        foe=enemy(235); foe['vel']=[0,0,0]
+        state=SimpleNamespace(retreat=False,last_hurt=-100,tracks={7:{'actor':foe,'seen':10}},
+                              world=Mock(),cfg=HELLO['config'])
+        state.world.shot_clear.return_value=True
+        with patch.dict('os.environ',{'BOT_OPPORTUNISTIC_RELOAD':'1'}):
+            for condition in ('fire','empty','reload','closing','near','npc','hurt','zone','sound','projectile'):
+                with self.subTest(condition=condition):
+                    state.opportunistic_reload_window=(7,9)
+                    action={'fire':[False,False]}; obs['sounds']=[]; obs['projectiles']=[]
+                    obs['self']['in_zone']=True; state.last_hurt=-100
+                    gun.update(ammo=4,reload=0); foe['vel']=[0,0,0]; state.tracks={7:{'actor':foe,'seen':10}}
+                    if condition=='fire': action['fire'][0]=True
+                    if condition=='empty': gun['ammo']=0
+                    if condition=='reload': gun['reload']=1
+                    if condition=='closing': foe['vel']=[-10,0,0]
+                    if condition=='near': state.tracks[8]={'actor':enemy(50),'seen':10}
+                    if condition=='npc': state.tracks[8]={'actor':dict(enemy(50),kind='npc'),'seen':10}
+                    if condition=='hurt': state.last_hurt=9
+                    if condition=='zone': obs['self']['in_zone']=False
+                    if condition=='sound': obs['sounds']=[{'kind':'gun','dist':'near','age':0}]
+                    if condition=='projectile': obs['projectiles']=[{'pos':[30,0,0]}]
+                    opportunistic_reload(state,obs,action,foe)
+                    self.assertFalse(action.get('reload',False))
+                    self.assertIsNone(state.opportunistic_reload_window)
+
+    def test_opportunistic_reload_needs_blocked_current_and_future_intercepts(self):
+        obs=observation(); obs['t']=10
+        gun=obs['self']['weapons'][0]
+        gun.update(kind='gun',ammo=4,reload=0,cooldown=0,stats=HELLO['config']['weapons']['gun'])
+        foe=enemy(180); foe['vel']=[0,0,0]
+        state=SimpleNamespace(retreat=False,last_hurt=-100,tracks={7:{'actor':foe,'seen':10}},
+                              world=Mock(),cfg=HELLO['config'])
+        action={'fire':[False,False]}
+        with patch.dict('os.environ',{'BOT_OPPORTUNISTIC_RELOAD':'1'}):
+            state.world.shot_clear.side_effect=[False,True]
+            opportunistic_reload(state,obs,action,foe)
+            self.assertIsNone(state.opportunistic_reload_window)
+            state.world.shot_clear.side_effect=None
+            state.world.shot_clear.return_value=False
+            opportunistic_reload(state,obs,action,foe)
+            obs['t']=10.5; state.tracks[7]['seen']=10.5
+            opportunistic_reload(state,obs,action,foe)
+            self.assertTrue(action['reload'])
+
+    def test_opportunistic_reload_does_not_replace_normal_controller_targeting(self):
+        obs=observation(); obs['t']=10; obs['alive']=2
+        gun=obs['self']['weapons'][0]
+        gun.update(kind='gun',ammo=4,reload=0,cooldown=0,stats=HELLO['config']['weapons']['gun'])
+        foe=enemy(235); foe['vel']=[0,0,0]; obs['mechs']=[foe]
+        bot=Controller(HELLO); bot.world.shot_clear=Mock(return_value=True)
+        bot.field=None; bot.corner_duel=False
+        bot.movement.avoid_shells=Mock(return_value=None)
+        bot.movement.combat_move=Mock(return_value=[0,0])
+        bot.movement.apply_evasion_and_recovery=Mock()
+        with patch.dict('os.environ',{'BOT_OPPORTUNISTIC_RELOAD':'1'}):
+            first=bot.act(obs)
+            obs['t']=10.5; obs['tick']+=10
+            second=bot.act(obs)
+        self.assertEqual(bot.target_id,foe['id'])
+        self.assertFalse(first.get('reload',False))
+        self.assertTrue(second.get('reload',False))
+
     @unittest.skip('Cube-upgrade experiment is not present in this branch')
     def test_cube_upgrade_value_uses_live_thresholds(self):
         from bot.loadout import cube_upgrade_multiplier

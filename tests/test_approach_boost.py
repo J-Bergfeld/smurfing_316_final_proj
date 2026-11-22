@@ -8,6 +8,7 @@ from test_bot import HELLO, enemy, observation
 class ApproachBoostTests(unittest.TestCase):
     def setUp(self):
         self.bot = Controller(HELLO)
+        self.bot.approach_boost = True
         self.obs = observation()
         self.obs.update(t=10, tick=200)
         self.foe = enemy(115)
@@ -29,6 +30,10 @@ class ApproachBoostTests(unittest.TestCase):
         other = enemy(120); other['id'] = 8
         self.bot.assess_combat.return_value = ([self.foe, other], self.foe, self.foe, True, False)
         self.assertTrue(self.act()['boost'])
+
+    def test_approach_boost_is_disabled_by_default(self):
+        self.bot.approach_boost = False
+        self.assertFalse(self.act()['boost'])
 
     def test_respects_readiness_energy_health_retreat_and_direction(self):
         gun = self.obs['self']['weapons'][0]
