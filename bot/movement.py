@@ -642,8 +642,16 @@ class Movement:
             dx+=px; dy+=py
         for actor in obs.get('mechs',[]):
             if actor['kind']!='mech' or not actor.get('charging'): continue
-            bearing=math.atan2(cy-actor['pos'][1],cx-actor['pos'][0])
-            if abs(angle_diff(actor['aim'][0],bearing))>.15: continue
+            scale=1+actor.get('cubes',0)*self.cfg['cubes'].get('size_per_cube',.05)
+            origin=(actor['pos'][0],actor['pos'][1],actor['pos'][2]+self.cfg['mech']['muzzle_height']*scale)
+            distance=math.dist(origin,(cx,cy,cz))
+            if distance>self.cfg['weapons']['laser']['range']: continue
+            horizontal=math.hypot(cx-origin[0],cy-origin[1])
+            bearing=math.atan2(cy-origin[1],cx-origin[0])
+            pitch=math.atan2(cz-origin[2],horizontal)
+            if abs(angle_diff(actor['aim'][0],bearing))>.06+math.atan2(reach,max(1,horizontal)): continue
+            if abs(actor['aim'][1]-pitch)>.04+math.atan2(me['stats']['height']*.5,max(1,horizontal)): continue
+            if not self.world.shot_clear(origin,(cx,cy,cz)): continue
             dx+=math.cos(bearing+math.pi/2*self.strafe)*1.5; dy+=math.sin(bearing+math.pi/2*self.strafe)*1.5; laser=True
         length=math.hypot(dx,dy)
         return ([dx/length,dy/length],laser) if length>.01 else ([0.,0.],False)

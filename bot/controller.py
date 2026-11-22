@@ -49,6 +49,7 @@ class Controller:
         self.unseen_hit_position = None
         self.pressure_aim_times = {}
         self.pressure_engage_times = {}
+        self.enemy_laser_fired = {}
         self.retreat_started = -100.
         self.lobby_alive = None
         self.lobby_kills = 0

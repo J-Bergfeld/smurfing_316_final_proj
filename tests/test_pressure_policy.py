@@ -232,6 +232,23 @@ class PressurePolicyTests(unittest.TestCase):
         self.bot.tracks[8]['seen'] -= 1
         self.assertIs(assess_pressure(self.bot, self.obs)[2]['actor'], self.foe)
 
+    def test_observed_laser_cooldown_affects_target_selection_briefly(self):
+        other = enemy(80)
+        other.update(id=8, weapons=['laser'])
+        self.bot.tracks[8] = {'actor': other, 'seen': self.obs['t'], 'los': True}
+        self.bot.enemy_laser_fired[8] = self.obs['t'] - .1
+        self.assertIs(assess_pressure(self.bot, self.obs)[2]['actor'], other)
+        self.bot.enemy_laser_fired[8] = self.obs['t'] - 5
+        self.assertIs(assess_pressure(self.bot, self.obs)[2]['actor'], self.foe)
+
+    def test_laser_beam_memory_uses_observation_age(self):
+        self.obs['beams'] = [{'by': 7, 'kind': 'laser', 'age': .2, 'path': [[1, 0, 5], [2, 0, 5]]}]
+        self.bot.update_world(self.obs)
+        self.assertAlmostEqual(self.bot.enemy_laser_fired[7], self.obs['t'] - .2)
+        self.obs['beams'][0]['age'] = 1
+        self.bot.update_world(self.obs)
+        self.assertAlmostEqual(self.bot.enemy_laser_fired[7], self.obs['t'] - .2)
+
     def test_missing_nearby_drone_is_removed_when_position_is_visible(self):
         npc = {'id': 101, 'kind': 'npc', 'pos': [5, 0, 0], 'vel': [0, 0, 0]}
         self.bot.tracks = {101: {'actor': npc, 'seen': self.obs['t'] - .1, 'los': True}}

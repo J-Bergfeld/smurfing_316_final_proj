@@ -252,6 +252,24 @@ class ControllerTests(unittest.TestCase):
         obs['projectiles'][0]['pos'][2] = 100
         self.assertIsNone(move.avoid_shells(obs))
 
+    def test_laser_evasion_checks_range_pitch_and_obstruction(self):
+        obs = observation()
+        world = Mock()
+        world.shot_clear.return_value = True
+        move = Movement(world, HELLO['config'], random.Random(1))
+        attacker = enemy(100)
+        attacker['charging'] = True
+        obs['mechs'] = [attacker]
+        self.assertTrue(move.avoid_projectiles(obs)[1])
+        world.shot_clear.return_value = False
+        self.assertFalse(move.avoid_projectiles(obs)[1])
+        world.shot_clear.return_value = True
+        attacker['aim'][1] = 1
+        self.assertFalse(move.avoid_projectiles(obs)[1])
+        attacker['aim'][1] = 0
+        attacker['pos'][0] = 400
+        self.assertFalse(move.avoid_projectiles(obs)[1])
+
     def test_spacing_moves_away_from_nearby_second_enemy(self):
         obs=observation(); foe=enemy(80); other=enemy(-30); other['id']=8
         world=Mock(); world.line_walkable.return_value=True; world.free_cell.return_value=True

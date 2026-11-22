@@ -184,6 +184,13 @@ def update_perception(state,obs):
             state.kills.add(event['target']); state.tracks.pop(event['target'],None)
         elif event['type'] in ('took','take_failed'):
             state.items.pop(event.get('id'),None)
+    if hasattr(state,'enemy_laser_fired'):
+        for beam in obs.get('beams',[]):
+            ident=beam.get('by')
+            if beam.get('kind')!='laser' or ident is None or ident==me.get('id'): continue
+            fired=t-max(0.,beam.get('age',0))
+            state.enemy_laser_fired[ident]=max(fired,state.enemy_laser_fired.get(ident,-math.inf))
+        state.enemy_laser_fired={ident:when for ident,when in state.enemy_laser_fired.items() if t-when<10}
     state.attacker_memory={ident:when for ident,when in state.attacker_memory.items() if t-when<8}
     if state.initial is None: state.initial=obs['alive']
     z=obs['zone']

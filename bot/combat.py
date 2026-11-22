@@ -566,6 +566,11 @@ def assess_pressure(state, obs):
             if abs(angle_diff(bearing,facing[0]))>math.radians(state.cfg['mech'].get('front_arc_deg',180)*.5):
                 score*=1.25
         if has_laser and 'mortar' in actor.get('weapons',[]): score*=1.25
+        # A recently fired beam gives a brief opening before the next charge.
+        last_beam=getattr(state,'enemy_laser_fired',{}).get(actor['id'],-math.inf)
+        cooldown=state.cfg['weapons']['laser'].get('cooldown',0)
+        if 'laser' in actor.get('weapons',[]) and 0<=now-last_beam<cooldown:
+            score*=1.15
         return score
     target = max(visible, key=target_score, default=None)
     return known, engaged, target
