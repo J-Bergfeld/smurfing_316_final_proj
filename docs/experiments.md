@@ -8,6 +8,7 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 | Commit / settings | Score | Squad-proxy mean / official minus proxy | Status / provenance |
 | --- | ---: | --- | --- |
+| `47291ba`, packaged cornered boost, cover recovery and spacing | 4.88 | Unknown | Latest user-reported official trial. Scored 0.02 below the `26db76c` cornered-dodge trial and 0.29 below the 5.17 best. |
 | `4991fa6`, default | **5.17** | 3.81 / +1.36; approximate control, see note | Best reported official entry; earlier than tied `c5aeebb`. User confirmed commit and defaults; submission time and run ID unknown. |
 | `c5aeebb`, default | **5.17** | 3.875 / +1.295; approximate candidate, see note | Shared-torso gun aim; user-reported score ties the champion. Submission time and run ID unknown. |
 | `fb85097`, default | 5.10 | 3.33 / +1.77; approximate candidate, see note | Threat spacing with shared aim; user-reported score. Submission time and run ID unknown. |
