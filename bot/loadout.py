@@ -55,16 +55,30 @@ def choose_loadout(obs, config):
         out['pick']=min(range(len(obs['offer']['choices'])),key=lambda i:order.index(obs['offer']['choices'][i]['id']) if obs['offer']['choices'][i]['id'] in order else len(order))
     return out
 
+
+def cube_upgrade_multiplier(config, count, cubes_gained=1):
+    """Value an imminent configured upgrade without inventing future thresholds."""
+    thresholds=config['cubes'].get('upgrade_thresholds', ())
+    return 1.5 if any(count < threshold <= count+cubes_gained for threshold in thresholds) else 1.0
+
 def choose_objective(state, obs, hp, danger, squad):
     """Rank reachable pickups and farming targets."""
     me=obs['self']; p=me['pos']; t=obs['t']; z=obs['zone']
     best=None; score=0.; held={w['kind'] for w in me['weapons'] if w}
     candidates=list(state.items.items())
+    safe_cube_ids=None
+    if danger and getattr(state,'safe_combat_cubes',False):
+        cubes=[item for _,(kind,item,_) in candidates if kind=='cubes']
+        enemies=[tr['actor'] for tr in state.tracks.values()
+                 if tr['actor']['kind']=='mech' and t-tr['seen'] <= 1]
+        # A recent, unseen attacker is not evidence of a safe route.
+        safe_cube_ids={item['id'] for item in state.safe_cubes(obs,enemies,cubes)} if enemies else set()
     if hp>(.5 if squad else .7) and not danger and (squad or t<150) and me['cubes']<state.cfg['cubes']['stat_cap']:
         candidates += [(ident,('npc',tr['actor'],tr['seen'])) for ident,tr in state.tracks.items() if tr['actor']['kind']=='npc' and t-tr['seen']<12]
     if squad and state.supply_drops and not danger:
         candidates.extend((drop['id'], ('drops', drop, t)) for drop in obs.get('drops', []))
     for ident,(kind,item,when) in candidates:
+        if kind == 'cubes' and safe_cube_ids is not None and ident not in safe_cube_ids: continue
         d=math.dist(p[:2],item['pos'][:2])
         if d>260 or ident in state.bad and state.bad[ident]>t: continue
         route_extra=0.
@@ -107,6 +121,8 @@ def choose_objective(state, obs, hp, danger, squad):
                     and getattr(state.world,'line_walkable',lambda *_:False)(p,item['pos'])):
                 value=170
         else: continue
+        if kind == 'cubes' and getattr(state,'cube_upgrade_value',False):
+            value *= cube_upgrade_multiplier(state.cfg, me['cubes'])
         if item['pos'][2]-state.world.ground(*item['pos'][:2])>3.2: continue
         free=state.world.nearest_free(state.world.cell(*item['pos'][:2]))
         if free is None or (state.world.baked and state.world.baked['component'][free[1]*state.world.baked['nx']+free[0]]!=state.world.baked['main']): continue

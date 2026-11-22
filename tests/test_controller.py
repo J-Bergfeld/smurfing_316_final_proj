@@ -8,12 +8,132 @@ from unittest.mock import Mock, patch
 
 from bot.controller import Controller
 from bot.combat import aim_and_fire
-from bot.loadout import choose_loadout
+from bot.loadout import choose_loadout, cube_upgrade_multiplier
 from bot.movement import Movement
 from test_bot import HELLO, enemy, observation
 
 
 class ControllerTests(unittest.TestCase):
+    def test_safe_combat_cube_rejects_exposed_and_stale_detours(self):
+        bot=Controller(HELLO); bot.action_deadline=time.perf_counter()+1
+        obs=observation(); obs['t']=20
+        foe=enemy(80); foe['weapons']=['gun']
+        bot.tracks[foe['id']]={'actor':foe,'seen':20,'los':True}
+        cube={'id':5000,'pos':[20,0,0]}
+        bot.items[5000]=('cubes',cube,20)
+        bot.world=Mock()
+        bot.world.line_walkable.return_value=True
+        bot.world.walk_at.return_value=0
+        bot.world.shot_clear.side_effect=lambda a,b: b[0] > 10
+        self.assertEqual(bot.safe_cubes(obs,[foe],[cube]),[])
+        bot.world.shot_clear.return_value=False
+        bot.world.shot_clear.side_effect=None
+        self.assertEqual(bot.safe_cubes(obs,[foe],[cube]),[cube])
+        bot.items[5000]=('cubes',cube,18)
+        self.assertEqual(bot.safe_cubes(obs,[foe],[cube]),[])
+
+    def test_combat_cube_after_stat_cap_requires_an_immediate_upgrade(self):
+        bot=Controller(HELLO); bot.action_deadline=time.perf_counter()+1
+        obs=observation(); obs['t']=20; obs['self']['cubes']=14
+        cube={'id':5000,'pos':[10,0,0]}; bot.items[5000]=('cubes',cube,20)
+        bot.world=Mock(); bot.world.walk_at.return_value=0
+        bot.world.line_walkable.return_value=True
+        self.assertEqual(bot.safe_cubes(obs,[],[cube]),[cube])
+        obs['self']['cubes']=13
+        self.assertEqual(bot.safe_cubes(obs,[],[cube]),[])
+
+    def test_cube_budget_rejects_incomplete_exposure_and_is_shared(self):
+        bot=Controller(HELLO); bot.action_deadline=100
+        obs=observation(); obs['t']=20
+        foe=enemy(80); bot.tracks[foe['id']]={'actor':foe,'seen':20,'los':True}
+        cube={'id':5000,'pos':[10,0,0]}; bot.items[5000]=('cubes',cube,20)
+        bot.world=Mock(); bot.world.walk_at.return_value=0
+        bot.world.line_walkable.return_value=True
+        clock=[0.]
+        def slow_ray(*args):
+            clock[0]=.006
+            return False
+        bot.world.shot_clear.side_effect=slow_ray
+        with patch('bot.controller.time.perf_counter',side_effect=lambda:clock[0]):
+            self.assertEqual(bot.safe_cubes(obs,[foe],[cube]),[])
+            bot.world.shot_clear.reset_mock()
+            self.assertEqual(bot.safe_cubes(obs,[foe],[cube]),[])
+            bot.world.shot_clear.assert_not_called()
+
+    def test_cube_upgrade_value_uses_live_thresholds(self):
+        config={'cubes':{'upgrade_thresholds':[2,5,11]}}
+        self.assertEqual(cube_upgrade_multiplier(config,1),1.5)
+        self.assertEqual(cube_upgrade_multiplier(config,2),1.0)
+        self.assertEqual(cube_upgrade_multiplier(config,4),1.5)
+        self.assertEqual(cube_upgrade_multiplier(config,10),1.5)
+        self.assertEqual(cube_upgrade_multiplier(config,11),1.0)
+
+    def test_imminent_upgrade_changes_cube_objective_ranking(self):
+        bot=Controller(HELLO); obs=observation(); obs['self']['cubes']=2
+        bot.world=SimpleNamespace(ground=Mock(return_value=0),cell=Mock(return_value=(0,0)),
+                                  nearest_free=Mock(return_value=(0,0)),baked=None)
+        bot.hold=(*obs['zone']['center'],obs['zone']['radius'])
+        bot.items={5000:('cubes',{'id':5000,'pos':[20,0,0]},0),
+                   8000:('pickups',{'id':8000,'kind':'laser','pos':[45,0,0]},0)}
+        bot.cube_upgrade_value=False
+        self.assertEqual(bot.choose_objective(obs,1.,False,True)[0],8000)
+        bot.cube_upgrade_value=True
+        self.assertEqual(bot.choose_objective(obs,1.,False,True)[0],5000)
+
+    def test_dangerous_loot_objective_requires_safe_cube(self):
+        bot=Controller(HELLO); obs=observation()
+        bot.world=SimpleNamespace(ground=Mock(return_value=0),cell=Mock(return_value=(0,0)),
+                                  nearest_free=Mock(return_value=(0,0)),baked=None)
+        bot.hold=(*obs['zone']['center'],obs['zone']['radius'])
+        cube={'id':5000,'pos':[20,0,0]}; bot.items={5000:('cubes',cube,0)}
+        self.assertIsNone(bot.choose_objective(obs,1.,True,True))
+        foe=enemy(50); bot.tracks[foe['id']]={'actor':foe,'seen':0,'los':True}
+        bot.safe_cubes=Mock(return_value=[cube])
+        self.assertEqual(bot.choose_objective(obs,1.,True,True)[0],5000)
+
+    def test_opening_scan_yields_to_recent_damage(self):
+        with patch.dict('os.environ', {'BOT_OPENING_SCAN':'1'}):
+            bot=Controller(HELLO)
+        obs=observation(); obs.update(t=20, tick=200)
+        bot.update_world=Mock()
+        bot.assess_combat=Mock(return_value=([],None,None,False,False))
+        bot.choose_objective=Mock(return_value=None)
+        bot.movement=Mock(unstuck_until=0)
+        bot.movement.avoid_shells.return_value=None
+        bot.movement.navigate.return_value=[1,0]
+        bot.hold=(*obs['zone']['center'],obs['zone']['radius'])
+        self.assertAlmostEqual(abs(bot.act(obs)['aim'][0]), 3.141592653589793)
+        bot.last_hurt=19
+        bot.hurt_bearing=.7
+        self.assertAlmostEqual(bot.act(obs)['aim'][0], .7)
+
+    def test_stalled_loot_abandoned_after_repeated_no_path(self):
+        with patch.dict('os.environ', {'BOT_ABANDON_STALLED_LOOT':'1'}):
+            bot=Controller(HELLO)
+        obs=observation(); obs.update(t=20,tick=200)
+        item={'id':5000,'pos':[30,0,0]}
+        bot.update_world=Mock()
+        bot.assess_combat=Mock(return_value=([],None,None,False,False))
+        bot.choose_objective=Mock(return_value=(5000,'cubes',item,30,20))
+        bot.movement=Mock(unstuck_until=0)
+        bot.movement.avoid_shells.return_value=None
+        bot.movement.navigate.return_value=[0,0]
+        bot.hold=(*obs['zone']['center'],obs['zone']['radius'])
+        bot.act(obs)
+        self.assertNotIn(5000,bot.bad)
+        obs['t']=22.1
+        bot.act(obs)
+        self.assertGreater(bot.bad[5000],obs['t'])
+
+    def test_zone_route_time_uses_only_complete_paths(self):
+        bot=Controller(HELLO); bot.action_deadline=time.perf_counter()+1
+        bot.world=Mock()
+        bot.world.cell_pos.side_effect=lambda cell: cell
+        bot.world.path.return_value=([(0,0),(0,30),(10,30)], True)
+        self.assertAlmostEqual(bot.zone_route_time([0,0,0],[10,0],20,10),11.)
+        bot.world.path.return_value=([(0,0),(0,30)], False)
+        self.assertEqual(bot.zone_route_time([0,0,0],[10,0],22,10),0.)
+
     def test_magazine_priority_depends_on_equipped_weapons(self):
         obs = observation()
         obs['offer'] = {'choices': [{'id': kind} for kind in ('gun_rate', 'gun_mag', 'gun_damage')]}
