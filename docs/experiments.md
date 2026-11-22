@@ -64,6 +64,10 @@ All panels used simulator `e322ffe`. Local raw evidence is in `mech-testing/tact
 
 This candidate uses the 5.23 shared-torso settings with corner duels, supply-drop pursuit and late-circle hiding disabled. When the gun is the only equipped weapon, drum magazine takes priority over gun damage and fire rate. Plating, armor and nanites retain priority over the magazine. Equipping a secondary restores the original upgrade order. Official score pending.
 
+## Corner duel with gun-only drum magazine
+
+This candidate uses the corner-duel configuration from `10fb916` (official score **5.21**) and the gun-only magazine preference from `b99a613`. Comparing it with `10fb916` tests the upgrade preference while holding combat tactics fixed. Official score pending.
+
 ## Corner duel practice trial
 
 The packaged candidate uses the settings of the 5.23 shared-torso entry (`c5aeebba81a5`) and enables `BOT_CORNER_DUEL=1`. Supply-drop pursuit and late-circle hiding are disabled for this comparison. During inferred squad play, two mechs with open firing lines must be aiming toward us or have damaged us within three seconds. The controller checks reachable ground positions 6 or 12 m away for a shot on a single exposed hunter, favors lower HP, and skips cube detours during the maneuver. Open ground falls back to the existing policy. An urgent zone takes priority.
