@@ -1,13 +1,34 @@
 import unittest
+import time
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from bot.combat import aim_and_fire, apply_weapon_control, assess_pressure, mortar_solution, shot_to_surface_clear, pressure_advantage, pressure_dps
+from bot.combat import aim_and_fire, apply_weapon_control, assess_pressure, mortar_solution, shot_to_surface_clear, pressure_advantage, pressure_dps, pressure_laser_peek
 from bot.controller import Controller
 from bot.loadout import pressure_pickup, choose_loadout
 from test_bot import HELLO, enemy, observation
 
 
 class PressurePolicyTests(unittest.TestCase):
+    def test_laser_peek_charges_in_cover_then_moves_to_firing_position(self):
+        obs=observation(); me=obs['self']; me['pos']=[-3,0,0]
+        laser={'kind':'laser','charge':0,'cooldown':0,'stats':HELLO['config']['weapons']['laser']}
+        me['weapons'][1]=laser
+        foe=enemy(90)
+        def clear(a,b):
+            return b[0]>=0 if a[0]>50 else a[0]>=0
+        world=SimpleNamespace(walk_at=lambda x,y:0,inside=lambda x,y:True,
+                              cell=lambda x,y:(x,y),free_cell=lambda cell:True,
+                              line_walkable=lambda a,b:True,shot_clear=clear)
+        state=SimpleNamespace(world=world,cfg=HELLO['config'],action_deadline=time.perf_counter()+1)
+        step=pressure_laser_peek(state,obs,foe,[foe])
+        self.assertEqual(step['goal'],(-3,0))
+        self.assertTrue(step['charge'])
+        laser['charge']=.2
+        step=pressure_laser_peek(state,obs,foe,[foe])
+        self.assertGreaterEqual(step['goal'][0],0)
+        self.assertFalse(step['charge'])
+
     def test_pressure_exchange_accounts_for_weapon_range_and_armor(self):
         self_state = observation()['self']
         opponent = enemy(100)
@@ -122,6 +143,21 @@ class PressurePolicyTests(unittest.TestCase):
              patch('bot.controller.apply_weapon_control') as weapon_control:
             self.bot.act_pressure(self.obs)
         self.assertIs(weapon_control.call_args.args[3], self.foe)
+
+    def test_peek_can_start_laser_charge_while_moving_to_cover(self):
+        self.bot.laser_peek = True
+        self.bot.ffa = True
+        self.obs['self']['weapons'][1] = {'kind': 'laser', 'charge': 0, 'cooldown': 0,
+                                         'stats': HELLO['config']['weapons']['laser']}
+        plan = {'goal': (5, 0), 'charge': True, 'slot': 1}
+        with patch.object(self.bot.movement, 'avoid_shells', return_value=None), \
+             patch.object(self.bot.movement, 'navigate', return_value=[1, 0]), \
+             patch.object(self.bot.movement, 'apply_evasion_and_recovery'), \
+             patch('bot.controller.pressure_laser_peek', return_value=plan), \
+             patch('bot.controller.apply_weapon_control'):
+            action = self.bot.act_pressure(self.obs)
+        self.assertEqual(self.bot.mode, 'peek')
+        self.assertTrue(action['fire'][1])
 
     def test_reload_only_when_idle_or_empty_while_engaging(self):
         self.bot.decision_policy = 'pressure'

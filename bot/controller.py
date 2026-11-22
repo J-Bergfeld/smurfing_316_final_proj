@@ -5,7 +5,7 @@ import random
 import time
 
 from .geometry import Arena, angle_diff, zone_goal, zone_deadline
-from .combat import Combat, assess_combat, assess_pressure, apply_weapon_control, pressure_advantage, pressure_dps
+from .combat import Combat, assess_combat, assess_pressure, apply_weapon_control, pressure_advantage, pressure_dps, pressure_laser_peek
 from .loadout import choose_loadout, choose_objective, pressure_pickup
 from .movement import Movement
 from .positional_field import PositionalField
@@ -35,6 +35,7 @@ class Controller:
         self.pressure_policy = os.getenv('BOT_PRESSURE_POLICY') == '1'
         self.decision_policy = os.getenv('BOT_DECISION_POLICY', 'classic')
         self.exchange_model = os.getenv('BOT_PRESSURE_EXCHANGE') == '1'
+        self.laser_peek = os.getenv('BOT_PRESSURE_PEEK') == '1'
         self.recent_damage = []
         self.unseen_hit_at = -100.
         self.unseen_hit_bearing = 0.
@@ -57,6 +58,8 @@ class Controller:
         self.nav_method=os.getenv('BOT_NAV_METHOD','spacing')
         self.recovery_since=None; self.recovery_cooldown=-100.
         self.seen_cells={}; self.roam_cell=None; self.roam_at=-100.
+        self.hold_goal=None; self.hold_goal_at=-100.; self.hold_goal_zone=None
+        self.exposure_hold=os.getenv('BOT_PRESSURE_EXPOSURE_HOLD','1') == '1'
         self.pressure_zone_key=None; self.pressure_zone_goal=None; self.pressure_zone_at=-100.
 
     def mark_exploration(self, obs):
@@ -156,6 +159,15 @@ class Controller:
         self.pressure_zone_key=key; self.pressure_zone_at=t
         self.pressure_zone_goal=best or fallback or tuple(nxt)
         return self.pressure_zone_goal,True
+
+    def pressure_exposure_hold(self, obs):
+        if not self.exposure_hold: return None
+        zone=obs['zone']; t=obs['t']; key=(*zone['next_center'],zone['next_radius'])
+        if self.hold_goal is None or key!=self.hold_goal_zone or t-self.hold_goal_at>=2:
+            self.hold_goal=self.world.exposure_hold_goal(obs['self']['pos'],zone,self.hold_goal,
+                                                        getattr(self,'action_deadline',time.perf_counter()+.02)-.004)
+            self.hold_goal_at=t; self.hold_goal_zone=key
+        return self.hold_goal
 
     def pressure_fight_cube(self, obs, hp):
         """Pick up nearby cube piles while continuing to engage a target."""
@@ -481,6 +493,11 @@ class Controller:
                 threat.get('hp', 1400) >= 180 and
                 ('laser' in threat.get('weapons', []) or damage_rate > 60 or hp < .5 or len(engaged) >= 2)):
             slip = self.movement.seek_cover(obs, actors)
+        peek = None
+        if (self.laser_peek and cautious and have_laser and selected and selected['current'] and
+                not self.retreat and not urgent and not shell and now>=self.movement.unstuck_until and
+                (attack or slip is not None)):
+            peek = pressure_laser_peek(self, obs, threat, actors)
         if now < self.movement.unstuck_until:
             action['move'] = list(self.movement.unstuck_dir); mode = 'unstuck'
         elif shell:
@@ -503,6 +520,10 @@ class Controller:
                 mode = 'heal'
             if can_see:
                 target = threat
+        elif peek is not None:
+            target = threat
+            action['move'] = self.movement.navigate(me, peek['goal'], now)
+            mode = 'peek'
         elif slip is not None:
             action['move'] = slip
             mode = 'slip'
@@ -565,6 +586,9 @@ class Controller:
                     action.update(roof)
                 elif (roam := self.pressure_roam(obs,hp)) is not None:
                     action['move'] = self.movement.navigate(me, roam, now); mode = 'roam'
+                elif (hold := self.pressure_exposure_hold(obs)) is not None:
+                    if math.dist(pos[:2],hold)>8:
+                        action['move'] = self.movement.navigate(me, hold, now); mode = 'hold'
                 elif math.dist(pos[:2], goal) > 3:
                     action['move'] = self.movement.navigate(me, goal, now); mode = 'zone-walk'
         # The movement objective and the firing target are independent: keep
@@ -574,6 +598,8 @@ class Controller:
         if mode != 'roof-climb':
             self.movement.apply_evasion_and_recovery(obs, action, mode)
         apply_weapon_control(self, obs, action, target, threat if can_see else None, True)
+        if peek is not None and mode == 'peek' and peek['charge']:
+            action['fire'][peek['slot']] = True
         if any(item.get('phantom') for item in engaged) and now-self.unseen_hit_at<1.5 and (not selected or not selected['active'] or not can_see):
             action['aim']=[self.unseen_hit_bearing,0.]
             action['fire']=[bool(w and w['kind']=='laser' and w.get('charge',0)>0) for w in me['weapons'][:2]]

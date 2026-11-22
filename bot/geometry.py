@@ -250,6 +250,61 @@ class Arena:
             for gx in range(math.floor(min(xs)/16),math.floor(max(xs)/16)+1):
                 for gy in range(math.floor(min(ys)/16),math.floor(max(ys)/16)+1):
                     self.grid.setdefault((gx,gy),[]).append(i)
+        # Optional coarse exposure cache, tied to the exact arena files.  The
+        # navigation fallback remains available for maps with no matching grid.
+        self.hold_candidates = None
+        exposure_path = Path(__file__).with_name('exposure_grid.json.gz')
+        if self.baked is not None and use_cache and exposure_path.exists():
+            try:
+                with gzip.open(exposure_path, 'rt') as source:
+                    exposure = json.load(source)
+                if (exposure['world_sha256'] == hashlib.sha256(world_raw).hexdigest() and
+                        exposure['terrain_sha256'] == hashlib.sha256(raw).hexdigest() and
+                        len(exposure['values']) == exposure['nx'] * exposure['ny']):
+                    grid=self.baked; candidates=[]
+                    for j in range(exposure['ny']):
+                        y=exposure['y0']+6*j
+                        for i in range(exposure['nx']):
+                            value=exposure['values'][j*exposure['nx']+i]
+                            if value>1.5: continue
+                            x=exposure['x0']+6*i
+                            if not self.inside(x,y): continue
+                            cell=self.cell(x,y); index=cell[1]*grid['nx']+cell[0]
+                            candidates.append((x,y,value,cell,grid['clearance'][index],grid['component'][index]))
+                    self.hold_candidates=candidates
+            except (OSError, ValueError, KeyError, TypeError):
+                self.hold_candidates=None
+
+    def exposure_hold_goal(self, pos, zone, previous=None, deadline=None):
+        """Choose a nearby, reachable low-exposure ground hold position.
+
+        Returns None when the exposure cache does not match the current map.
+        The caller should cache the result between decisions.
+        """
+        if not self.hold_candidates or self.baked is None: return None
+        here=self.nearest_free(self.cell(*pos[:2]))
+        if here is None: return None
+        grid=self.baked; component=grid['component'][here[1]*grid['nx']+here[0]]
+        center=zone['next_center']; radius=zone['next_radius']; margin=min(14.,radius*.25)
+        if previous is not None:
+            previous_cell=self.cell(*previous)
+            previous_index=previous_cell[1]*grid['nx']+previous_cell[0]
+            if (not self.inside(*previous) or math.dist(previous,center)>radius-margin or
+                    grid['component'][previous_index]!=component or not self.free_cell(previous_cell)):
+                previous=None
+        best=None; best_score=math.inf
+        for x,y,value,cell,clearance,c in self.hold_candidates:
+            if deadline is not None and time.perf_counter()>=deadline:
+                return previous
+            if c != component: continue
+            d=math.hypot(x-pos[0],y-pos[1])
+            if d>320: continue
+            dn=math.hypot(x-center[0],y-center[1])
+            if dn>radius-margin: continue
+            score=value*100+d*.07+dn*.12+clearance*.8
+            if previous and math.hypot(x-previous[0],y-previous[1])<1: score-=9
+            if score<best_score and self.free_cell(cell): best=(x,y); best_score=score
+        return best
 
     def ground(self,x,y):
         t=self.terrain; fx=(x-t['minX'])/t['step']; fy=(y-t['minY'])/t['step']

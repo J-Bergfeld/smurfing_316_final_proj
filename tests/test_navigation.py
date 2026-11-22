@@ -5,7 +5,7 @@ import time
 import math
 from collections import defaultdict
 from unittest.mock import Mock
-from bot.movement import Movement
+from bot.movement import Movement, build_roof_access_graph
 from bot.geometry import Arena
 from bot.navigation import NavigationGraph
 from test_bot import HELLO, observation
@@ -143,6 +143,40 @@ class NavigationTests(unittest.TestCase):
         self.assertEqual(climbing['mode'], 'roof-climb')
         self.assertTrue(climbing['jump'])
         self.assertGreater(climbing['move'][1], .9)
+
+    def test_roof_access_graph_has_walkable_takeoff_and_real_roof_landing(self):
+        world = Arena(HELLO['map']['dir'])
+        graph = build_roof_access_graph(world)
+        self.assertTrue(graph)
+        roof = next(r for r in graph if r['access'])
+        cell, ground, edge, climb = roof['access'][0]
+        prism = world.prisms[roof['id']]
+        self.assertTrue(world.free_cell(cell))
+        self.assertTrue(any(item is prism for item in world.solids(*edge)))
+        self.assertGreaterEqual(climb, 6)
+        self.assertLessEqual(climb, 40)
+
+    def test_roof_graph_reconsiders_approach_after_three_seconds(self):
+        world = Mock()
+        world.baked = None
+        world.solids.return_value = []
+        world.prisms = [{}, {}]
+        world.free_cell.return_value = True
+        movement = Movement(world, HELLO['config'], random.Random(1))
+        movement.roof_graph = [
+            {'id': 0, 'inside': (-50, 0), 'top': 20, 'cells': {(0, 0)},
+             'access': [((0, 0), (-40, 0), (-45, 0), 20)]},
+            {'id': 1, 'inside': (30, 0), 'top': 20, 'cells': {(1, 0)},
+             'access': [((1, 0), (20, 0), (25, 0), 20)]},
+        ]
+        movement.roof_plan = {'id': 0, 'inside': (-50, 0), 'top': 20,
+                              'ground': (-40, 0), 'edge': (-45, 0), 'climb': 20,
+                              'started': 0, 'last_step': 4, 'state': 'approach'}
+        movement.roof_last_search = 0
+        obs = observation(); obs['t'] = 4; obs['self']['pos'] = [20, 0, 0]
+        result = movement.pressure_roof_step(obs, allow_climb=False)
+        self.assertEqual(result['mode'], 'roof-wait')
+        self.assertEqual(movement.roof_plan['id'], 1)
 
     def test_deeper_cover_keeps_distance_from_nearby_attacker(self):
         world = Mock()

@@ -28,6 +28,23 @@ class GeometryRayTests(unittest.TestCase):
             self.assertEqual(cells[-1],(math.floor(b[0]/16),math.floor(b[1]/16)))
             self.assertLess(len(cells),100)
 
+    def test_exposure_hold_goal_is_walkable_and_inside_next_circle(self):
+        zone={'next_center':[72.,-222.], 'next_radius':380.}
+        pos=[182.,-168.,5.]
+        goal=self.world.exposure_hold_goal(pos,zone)
+        self.assertIsNotNone(goal)
+        self.assertLess(math.dist(goal,zone['next_center']),zone['next_radius']-14)
+        self.assertTrue(self.world.free_cell(self.world.cell(*goal)))
+
+    def test_exposure_hold_falls_back_without_matching_navigation_cache(self):
+        uncached=Arena(HELLO['map']['dir'],use_cache=False)
+        self.assertIsNone(uncached.exposure_hold_goal([0,0,0],{'next_center':[0,0],'next_radius':100}))
+
+    def test_exposure_hold_does_not_reuse_goal_outside_next_circle(self):
+        zone={'next_center':[0.,0.], 'next_radius':100.}
+        goal=self.world.exposure_hold_goal([0,0,0],zone,previous=(300.,300.),deadline=0)
+        self.assertIsNone(goal)
+
     def test_real_map_matches_rectangle_broad_phase(self):
         rng=random.Random(8621)
         for i in range(600):

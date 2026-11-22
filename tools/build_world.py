@@ -152,12 +152,77 @@ def build(directory,output):
             'blocked':sum(nav[3]),'slab_cells':len(slabs)}
 
 
+def build_exposure(directory, output):
+    """Bake a canopy-aware coarse exposure grid for an already cached arena."""
+    A=Arena(directory); data=json.loads((Path(directory)/'v2/world.json').read_text()); b=A.bounds
+    if A.baked is None: raise ValueError('Build the matching terrain cache first')
+    tree_data=data.get('trees',{}); raw=tree_data.get('data',[])
+    fields=tree_data.get('fields',['x','y','z','height','crownR','crownBase','trunkR','crownX','crownY'])
+    n=len(fields); ix={k:fields.index(k) for k in fields}; bins={}; trees=[]
+    for i in range(0,len(raw),n):
+     row=raw[i:i+n]; x,y,z,h,cr,cb,tr,cx,cy=(row[ix[k]] for k in ('x','y','z','height','crownR','crownBase','trunkR','crownX','crownY')); rv=(h-cb)*.5
+     if cr<=0 or rv<=0: continue
+     key=len(trees); trees.append((x,y,z,h,cr,cb,tr,cx,cy,rv,z+cb+rv))
+     r=max(cr,tr)+2
+     for yy in range(math.floor((min(y,cy)-r)/32),math.floor((max(y,cy)+r)/32)+1):
+      for xx in range(math.floor((min(x,cx)-r)/32),math.floor((max(x,cx)+r)/32)+1): bins.setdefault((xx,yy),[]).append(key)
+    x0=math.floor(b['minX'])+3; y0=math.floor(b['minY'])+3; nx=math.ceil((b['maxX']-x0)/6); ny=math.ceil((b['maxY']-y0)/6); vals=[]; dirs=[(math.cos((i+.5)*math.pi/12),math.sin((i+.5)*math.pi/12)) for i in range(24)]
+    rules=data.get('rules',{}); density=rules.get('canopyDensity',0); transmission=rules.get('canopyBlockT',1)
+    limit=-math.log(transmission)/density if density>0 and 0<transmission<1 else math.inf
+    top=A.baked['top']; slabs=A.baked['slabs']; terrain=A.terrain; tn=terrain['nx']; ty=terrain['ny']; ox=terrain['minX']; oy=terrain['minY']; bound=b
+    for j in range(ny):
+     y=y0+j*6
+     for i in range(nx):
+      x=x0+i*6; cell=A.cell(x,y)
+      if not A.free_cell(cell): vals.append(2.); continue
+      z=A.walk_at(x,y)+8; total=0
+      for dx,dy in dirs:
+       d=2.5
+       while d<200:
+        px=x+dx*d; py=y+dy*d
+        if px<bound['minX'] or px>bound['maxX'] or py<bound['minY'] or py>bound['maxY']: break
+        ti=int(px-ox+.5); tj=int(py-oy+.5)
+        if ti<0 or ti>=tn or tj<0 or tj>=ty: break
+        idx=tj*tn+ti
+        if z<top[idx]-.05 or (idx in slabs and any(lo<z<hi for lo,hi in slabs[idx])): break
+        d+=2.5
+       if d>45:
+        traversed=set(); seenbins=set(); depth=0.; nearest=d
+        for k in range(0,int(d/8)+2):
+         t=min(d,k*8.); g=(math.floor((x+dx*t)/32),math.floor((y+dy*t)/32))
+         if g in seenbins: continue
+         seenbins.add(g)
+         for key in bins.get(g,()):
+          if key in traversed: continue
+          traversed.add(key); tx,ty_,tz,h,cr,cb,tr,cx,cy,rv,cz=trees[key]
+          along=(tx-x)*dx+(ty_-y)*dy
+          if tr>0 and 0<along<nearest and tz<=z<=tz+cb and ((x+dx*along-tx)**2+(y+dy*along-ty_)**2)<tr*tr: nearest=along; continue
+          zrel=(z-cz)/rv
+          if abs(zrel)>=1: continue
+          along=(cx-x)*dx+(cy-y)*dy
+          side=(cx-x)*(-dy)+(cy-y)*dx
+          v=cr*cr*(1-zrel*zrel)-side*side
+          if v<=0: continue
+          half=math.sqrt(v); chord=max(0.,min(d,along+half)-max(0.,along-half))
+          if chord>0:
+           depth+=chord
+           if depth>limit: nearest=min(nearest,max(0.,along))
+        d=min(d,max(45.,nearest))
+       total+=min(d,200)
+      vals.append(round(total/(24*200),5))
+    with gzip.open(output,'wt') as f: json.dump({'x0':x0,'y0':y0,'nx':nx,'ny':ny,'values':vals,'world_sha256':hashlib.sha256((Path(directory)/'v2/world.json').read_bytes()).hexdigest(),'terrain_sha256':hashlib.sha256((Path(directory)/'v2/terrain.i16').read_bytes()).hexdigest()},f,separators=(',',':'))
+    return {'nx':nx,'ny':ny}
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--arena',type=Path,default=ROOT/'arena')
-    parser.add_argument('--out',type=Path,required=True)
+    parser.add_argument('--out',type=Path)
+    parser.add_argument('--exposure-out',type=Path)
     args=parser.parse_args()
-    print(build(args.arena,args.out))
+    if not args.out and not args.exposure_out: parser.error('provide --out or --exposure-out')
+    if args.out: print(build(args.arena,args.out))
+    if args.exposure_out: print(build_exposure(args.arena,args.exposure_out))
 
 
 if __name__=='__main__': main()

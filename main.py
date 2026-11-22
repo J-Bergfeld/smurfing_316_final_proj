@@ -1,6 +1,7 @@
 """Mech Royale entrypoint; the packaged integrated controller is practice-only."""
 import math
 import os
+import gc
 import mechfight
 from bot.geometry import Map, distance
 from bot.world import World
@@ -18,6 +19,10 @@ class Bot:
         self.integrated_policy = os.environ.get('BOT_POLICY', 'integrated') != 'legacy'
         if self.integrated_policy:
             self.strategy = Controller(hello)
+            if os.environ.get('BOT_PRESSURE_ROOF_GRAPH') == '1':
+                # Keep the static map and roof graph out of per-turn cycle scans.
+                gc.collect()
+                gc.freeze()
             return
         config = hello['config']; self.arena = Map(hello['map']['dir'])
         self.navigation = NavigationGraph(self.arena, config)

@@ -1,6 +1,7 @@
 """Target evaluation, aiming and weapon trigger control."""
 import math
 import os
+import time
 from .geometry import distance, angle_diff
 
 
@@ -21,6 +22,71 @@ def intercept(origin, target, velocity, speed):
 def aim_at(origin, target):
     dx,dy,dz = (target[i]-origin[i] for i in range(3))
     return [math.atan2(dy,dx),math.atan2(dz,math.hypot(dx,dy))]
+
+
+def pressure_laser_peek(state, obs, target, threats):
+    """Find nearby concealed and firing positions for a laser exchange.
+
+    Return a destination and whether to begin charging there. The caller
+    decides when peeking is appropriate and continues to control the weapon.
+    This ground-only search is bounded by the current action deadline.
+    """
+    me=obs['self']; now=obs['t']; world=state.world
+    laser=next(((i,w) for i,w in enumerate(me['weapons'][:2])
+                if w and w['kind']=='laser'),None)
+    if not laser or not me.get('grounded',True) or target.get('kind')!='mech': return None
+    p=me['pos']; target_pos=target['pos']; dist=math.dist(p[:2],target_pos[:2])
+    if not 45<dist<272 or abs(p[2]-world.walk_at(p[0],p[1]))>3.5: return None
+    i,w=laser
+    # Leave time for navigation, weapon control and the rest of the turn.
+    deadline=min(getattr(state,'action_deadline',time.perf_counter()+.015)-.010,
+                 time.perf_counter()+.004)
+    cached=getattr(state,'pressure_peek_cache',None)
+    if not cached or cached['id']!=target['id'] or now-cached['time']>=.4 or math.dist(cached['target'],target_pos[:2])>6:
+        previous=cached.get('fire') if cached and cached['id']==target['id'] else None
+        cached={'id':target['id'],'time':now,'target':tuple(target_pos[:2]),'duck':None,'fire':None}
+        threat_list=[actor for actor in threats if actor.get('kind')=='mech'
+                     and math.dist(p[:2],actor['pos'][:2])<260][:4]
+        if not threat_list: threat_list=[target]
+        eyes=[]
+        for actor in threat_list:
+            scale=1+actor.get('cubes',0)*state.cfg['cubes'].get('size_per_cube',.05)
+            eyes.append((actor['pos'][0],actor['pos'][1],actor['pos'][2]+8*scale))
+        height=me['stats']['height']; muzzle=me['stats']['muzzle_height']; zone=obs['zone']
+        target_height=state.cfg['mech']['height']*(1+target.get('cubes',0)*state.cfg['cubes'].get('size_per_cube',.05))*.5
+        target_center=(target_pos[0],target_pos[1],target_pos[2]+target_height)
+        candidates=[(p[0],p[1])]
+        for radius in (4,8,12,18,24):
+            candidates.extend((p[0]+radius*math.cos(k*math.pi/8),p[1]+radius*math.sin(k*math.pi/8)) for k in range(16))
+        for x,y in candidates:
+            if time.perf_counter()>=deadline: break
+            if not world.inside(x,y) or math.dist((x,y),zone['center'])>zone['radius']-6: continue
+            if not world.free_cell(world.cell(x,y)): continue
+            if math.hypot(x-p[0],y-p[1])>1 and not world.line_walkable(p,(x,y)): continue
+            ground=world.walk_at(x,y)
+            if any(world.shot_clear(eye,(x,y,ground+height*.5)) or
+                   world.shot_clear(eye,(x,y,ground+height*.95)) for eye in eyes): continue
+            best=None; best_score=math.inf
+            for radius in (2,4,6,8):
+                for k in range(16):
+                    if time.perf_counter()>=deadline: break
+                    fx=x+radius*math.cos(k*math.pi/8); fy=y+radius*math.sin(k*math.pi/8)
+                    if not world.inside(fx,fy) or not world.free_cell(world.cell(fx,fy)): continue
+                    score=radius-(2.5 if previous and math.dist(previous,(fx,fy))<1 else 0)
+                    if score>=best_score or not world.line_walkable((x,y,ground),(fx,fy)): continue
+                    if world.shot_clear((fx,fy,world.walk_at(fx,fy)+muzzle),target_center):
+                        best,best_score=(fx,fy),score
+                if best is not None: break
+            if best is not None:
+                cached['duck']=(x,y); cached['fire']=best
+                break
+        state.pressure_peek_cache=cached
+    if cached['duck'] is None: return None
+    duck,fire=cached['duck'],cached['fire']; charge=w.get('charge',0)
+    hp=me['hp']/max(1,me['max_hp'])
+    goal=fire if hp>=.12 and charge>=w['stats'].get('charge',.75)*.2 else duck
+    at_position=math.dist(p[:2],duck)<4 or math.dist(p[:2],fire)<4
+    return {'goal':goal,'charge':bool(hp>=.12 and charge<=0 and w.get('cooldown',0)<=.1 and at_position),'slot':i}
 
 
 def shot_to_surface_clear(world, origin, target, radius):

@@ -6,6 +6,68 @@ from collections import deque
 from .geometry import distance, angle_diff
 
 
+_ROOF_GRAPH_CACHE = {}
+
+
+def build_roof_access_graph(world):
+    """Build reachable takeoff/landing pairs on the baked two-metre grid."""
+    if not world.baked:
+        return []
+    bounds=world.bounds
+    signature=(tuple(bounds[k] for k in ('minX','minY','maxX','maxY')), hash(world.heights),
+               tuple((p.get('kind'),p.get('top'),tuple(p.get('ring',()))) for p in world.prisms))
+    if signature in _ROOF_GRAPH_CACHE:
+        return _ROOF_GRAPH_CACHE[signature]
+    grid=world.baked; nx=grid['nx']; ny=grid['ny']; graph=[]
+    for ident,prism in enumerate(world.prisms):
+        if prism['kind']!='building': continue
+        x0,y0,x1,y1=prism['box']
+        lo=world.cell(x0,y0); hi=world.cell(x1,y1)
+        cells=set()
+        for j in range(lo[1],min(ny,hi[1]+1)):
+            for i in range(lo[0],min(nx,hi[0]+1)):
+                x,y=world.cell_pos((i,j))
+                if any(p is prism for p in world.solids(x,y)):
+                    cells.add((i,j))
+        if len(cells)*4<250: continue
+        boundary=[]; depths={}
+        for cell in cells:
+            i,j=cell
+            if any((i+di,j+dj) not in cells for di,dj in ((1,0),(-1,0),(0,1),(0,-1),(1,1),(1,-1),(-1,1),(-1,-1))):
+                boundary.append(cell); depths[cell]=1
+        queue=deque(boundary)
+        while queue:
+            i,j=queue.popleft(); next_depth=depths[(i,j)]+1
+            for di,dj in ((1,0),(-1,0),(0,1),(0,-1)):
+                n=(i+di,j+dj)
+                if n in cells and n not in depths:
+                    depths[n]=next_depth; queue.append(n)
+        if not depths: continue
+        inner=max(depths,key=depths.get)
+        if (depths[inner]-.5)*2<5: continue
+        inner_pos=world.cell_pos(inner); top=prism['top']
+        if not world.standable(*inner_pos,top,2.5,9): continue
+        access=[]
+        for i,j in boundary:
+            for di,dj in ((1,0),(-1,0),(0,1),(0,-1)):
+                outside=(i+di,j+dj); edge=(i-di*2,j-dj*2)
+                if outside in cells or edge not in cells: continue
+                for step in (2,3):
+                    ground=(i+di*step,j+dj*step)
+                    if not (0<=ground[0]<nx and 0<=ground[1]<ny): break
+                    if ground in cells: break
+                    if world.free_cell(ground):
+                        gp=world.cell_pos(ground); ep=world.cell_pos(edge)
+                        climb=top-world.walk_at(*gp)
+                        if 6<=climb<=40: access.append((ground,gp,ep,climb))
+                        break
+        if access:
+            graph.append({'id':ident,'top':top,'inside':inner_pos,'cells':cells,
+                          'depths':depths,'access':access})
+    _ROOF_GRAPH_CACHE[signature]=graph
+    return graph
+
+
 class MovementSupport:
     def __init__(self):
         self.history=[]
@@ -95,6 +157,9 @@ class Movement:
         self.cover=None; self.cover_at=-100.
         self.home_xy=None; self.home_at=-100.
         self.roof_plan=None; self.roof_bans={}; self.roof_last_search=-100.
+        self.roof_graph = (build_roof_access_graph(world)
+                           if os.getenv('BOT_PRESSURE_ROOF_GRAPH') == '1' else None)
+        self.roof_graph_by_id = {roof['id']:roof for roof in self.roof_graph} if self.roof_graph else {}
         self.stuck_since=0.; self.unstuck_until=0.; self.unstuck_dir=(0.,0.)
         self.action_deadline=0.
 
@@ -117,7 +182,8 @@ class Movement:
                 if prism['kind']!='building' or abs(pos[2]-prism['top'])>=1.6:
                     continue
                 ident=next(i for i, candidate in enumerate(world.prisms) if candidate is prism)
-                x0,y0,x1,y1=prism['box']; center=((x0+x1)*.5,(y0+y1)*.5)
+                x0,y0,x1,y1=prism['box']; graph_roof=self.roof_graph_by_id.get(ident)
+                center=graph_roof['inside'] if graph_roof else ((x0+x1)*.5,(y0+y1)*.5)
                 if (prism['top']-world.ground(*center)<4 or
                         math.dist(center,zone['next_center'])>zone['next_radius']-8 or
                         not any(s is prism for s in world.solids(*center)) or
@@ -132,42 +198,65 @@ class Movement:
         if plan and (math.dist(plan['inside'],zone['next_center'])>zone['next_radius']-8
                      or now-plan['started']>60):
             self.roof_bans[plan['id']]=now+60; self.roof_plan=plan=None
+        previous = None
+        if self.roof_graph is not None and plan and plan['state']=='approach' and now-self.roof_last_search>3:
+            previous=plan
+            plan=None
         if plan is None:
             if now-self.roof_last_search<3: return None
             self.roof_last_search=now
             grid=world.baked
             here=world.nearest_free(world.cell(*pos[:2])) if grid else None
             component=grid['component'][here[1]*grid['nx']+here[0]] if here else None
-            best=None; best_distance=math.inf
-            for ident,prism in enumerate(world.prisms):
-                if prism['kind']!='building' or self.roof_bans.get(ident,0)>now: continue
-                x0,y0,x1,y1=prism['box']; cx=(x0+x1)*.5; cy=(y0+y1)*.5
-                if min(x1-x0,y1-y0)<2*radius+5: continue
-                if math.hypot(cx-pos[0],cy-pos[1])>260: continue
-                if math.dist((cx,cy),zone['next_center'])>zone['next_radius']-8: continue
-                if not any(s is prism for s in world.solids(cx,cy)): continue
-                top=prism['top']; climb=top-world.ground(cx,cy)
-                if not world.standable(cx,cy,top,radius,me['stats'].get('height',9)): continue
+            best=None; best_distance=math.inf; best_score=math.inf
+            if self.roof_graph is not None:
                 drain=me['stats'].get('jet_drain',15) or 15
-                if climb<9 or climb>min(40,(me.get('max_energy',100)-28)/drain*8.9): continue
-                # Probe the four sides of a building's bounding rectangle; a
-                # polygon check rejects sides that do not touch this prism.
-                margin=radius+1.3
-                sx=max(x0+margin,min(x1-margin,pos[0])); sy=max(y0+margin,min(y1-margin,pos[1]))
-                pairs=[((x0-margin,sy),(x0+margin,sy)),((x1+margin,sy),(x1-margin,sy)),
-                       ((sx,y0-margin),(sx,y0+margin)),((sx,y1+margin),(sx,y1-margin))]
-                for ground,edge in pairs:
-                    d=math.dist(pos[:2],ground)
-                    if d>=best_distance or not world.inside(*ground): continue
-                    if not any(s is prism for s in world.solids(*edge)): continue
-                    cell=world.cell(*ground)
-                    if not world.free_cell(cell): continue
-                    if grid and grid['component'][cell[1]*grid['nx']+cell[0]]!=component: continue
-                    best_distance=d
-                    best={'id':ident,'ground':ground,'edge':edge,'inside':(cx,cy),
-                          'top':top,'climb':climb,'started':now,'last_step':now,'state':'approach'}
-            if best is None: return None
-            self.roof_plan=plan=best
+                limit=min(40,(me.get('max_energy',100)-28)/drain*8.9)
+                for roof in self.roof_graph:
+                    if self.roof_bans.get(roof['id'],0)>now: continue
+                    if math.dist(roof['inside'],zone['next_center'])>=zone['next_radius']-8: continue
+                    if math.dist(roof['inside'],pos[:2])>260+math.sqrt(len(roof['cells'])*4): continue
+                    for cell,ground,edge,climb in roof['access']:
+                        if climb>limit or (grid and component is not None and grid['component'][cell[1]*grid['nx']+cell[0]]!=component): continue
+                        if not world.free_cell(cell): continue
+                        d=math.dist(pos[:2],ground)
+                        score=d-(40 if previous and roof['id']==previous['id'] else 0)
+                        if score>=best_score: continue
+                        best_score=score
+                        best_distance=d
+                        best={'id':roof['id'],'ground':ground,'edge':edge,'inside':roof['inside'],
+                              'top':roof['top'],'climb':climb,'started':now,'last_step':now,'state':'approach'}
+                if best is None: return None
+                self.roof_plan=plan=(previous if previous and previous['id']==best['id'] else best)
+            else:
+                for ident,prism in enumerate(world.prisms):
+                    if prism['kind']!='building' or self.roof_bans.get(ident,0)>now: continue
+                    x0,y0,x1,y1=prism['box']; cx=(x0+x1)*.5; cy=(y0+y1)*.5
+                    if min(x1-x0,y1-y0)<2*radius+5: continue
+                    if math.hypot(cx-pos[0],cy-pos[1])>260: continue
+                    if math.dist((cx,cy),zone['next_center'])>zone['next_radius']-8: continue
+                    if not any(s is prism for s in world.solids(cx,cy)): continue
+                    top=prism['top']; climb=top-world.ground(cx,cy)
+                    if not world.standable(cx,cy,top,radius,me['stats'].get('height',9)): continue
+                    drain=me['stats'].get('jet_drain',15) or 15
+                    if climb<9 or climb>min(40,(me.get('max_energy',100)-28)/drain*8.9): continue
+                    # Fall back to four bounding-box probes without the graph.
+                    margin=radius+1.3
+                    sx=max(x0+margin,min(x1-margin,pos[0])); sy=max(y0+margin,min(y1-margin,pos[1]))
+                    pairs=[((x0-margin,sy),(x0+margin,sy)),((x1+margin,sy),(x1-margin,sy)),
+                           ((sx,y0-margin),(sx,y0+margin)),((sx,y1+margin),(sx,y1-margin))]
+                    for ground,edge in pairs:
+                        d=math.dist(pos[:2],ground)
+                        if d>=best_distance or not world.inside(*ground): continue
+                        if not any(s is prism for s in world.solids(*edge)): continue
+                        cell=world.cell(*ground)
+                        if not world.free_cell(cell): continue
+                        if grid and grid['component'][cell[1]*grid['nx']+cell[0]]!=component: continue
+                        best_distance=d
+                        best={'id':ident,'ground':ground,'edge':edge,'inside':(cx,cy),
+                              'top':top,'climb':climb,'started':now,'last_step':now,'state':'approach'}
+                if best is None: return None
+                self.roof_plan=plan=best
         plan['last_step']=now
         top=plan['top']; over=any(s is world.prisms[plan['id']] for s in world.solids(*pos[:2]))
         if me.get('grounded',True) and over and abs(pos[2]-top)<1.6:
@@ -176,6 +265,19 @@ class Movement:
             if not over or abs(pos[2]-top)>2:
                 self.roof_plan=None; return None
             goal=plan['inside']
+            roof=self.roof_graph_by_id.get(plan['id'])
+            if roof:
+                current=world.cell(*pos[:2]); depths=roof['depths']; dist=math.dist(pos[:2],goal)
+                if current in depths:
+                    steps=int(dist/2)+1
+                    clear=all(depths.get(world.cell(pos[0]+(goal[0]-pos[0])*i/steps,
+                                                    pos[1]+(goal[1]-pos[1])*i/steps),0)>=2
+                              for i in range(1,steps+1))
+                    if not clear:
+                        choices=[(depths.get((current[0]+di,current[1]+dj),0),(current[0]+di,current[1]+dj))
+                                 for di in range(-3,4) for dj in range(-3,4)]
+                        depth,cell=max(choices)
+                        goal=world.cell_pos(cell) if depth>depths[current] else tuple(pos[:2])
             return {'move':self.navigate(me,goal,now) if math.dist(pos[:2],goal)>2 else [0.,0.],
                     'jump':False,'boost':False,'mode':'roof'}
         ground=plan['ground']; distance_to_ground=math.dist(pos[:2],ground)
