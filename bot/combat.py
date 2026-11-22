@@ -280,6 +280,44 @@ def assess_combat(state, obs, squad, late, hp):
         if state.retreat and not swamped and (hp>.8 or (t-state.last_threat>7 and hp>.55)): state.retreat=False
     return seen, target, foe, danger, finishing
 
+def sound_scan_bearing(state, obs):
+    """Hold a short-lived, anonymous nearby sound direction for idle scanning."""
+    now = obs['t']
+    if state.sound_scan is not None and now < state.sound_scan[0]:
+        return state.sound_scan[1]
+    state.sound_scan = None
+    # Movement and reload cues imply a nearby mech; weapon fire is less
+    # specific about distance or intent. These weights are experimental.
+    weights = {'step': 1.0, 'reload': .9, 'boost': .8, 'jet': .6,
+               'laser_charge': .7, 'lightning': .6, 'gun': .5,
+               'laser': .5, 'mortar': .4}
+    vision = state.cfg.get('vision', {})
+    half_fov = math.radians(vision.get('fov_deg', 120)) / 2
+    noise = math.radians(state.cfg.get('sound', {}).get('bearing_noise_deg', 7))
+    already_looking = max(0., half_fov - 2 * noise)
+    yaw = obs['self']['aim'][0]
+    candidates = []
+    for sound in obs.get('sounds', []):
+        age = sound.get('age', 0.)
+        band = sound.get('dist')
+        kind = sound.get('kind')
+        if kind not in weights or band not in ('near', 'mid') or not 0 <= age < 1.:
+            continue
+        offset = abs(angle_diff(sound['bearing'], yaw))
+        if offset < already_looking:
+            continue
+        # Favor fresh, nearby cues outside the current vision cone.
+        score = (1. if band == 'near' else .45) * weights[kind] * (1 - age)
+        if offset >= half_fov:
+            score += .2
+        candidates.append((score, sound['bearing'], age))
+    if not candidates:
+        return None
+    _, bearing, age = max(candidates)
+    state.sound_scan = (now + min(.8, 1. - age), bearing)
+    return bearing
+
+
 def apply_weapon_control(state, obs, action, target, foe, squad):
     """Choose a defensive target, aim, and update weapon triggers."""
     me=obs['self']; p=me['pos']; t=obs['t']
@@ -304,6 +342,7 @@ def apply_weapon_control(state, obs, action, target, foe, squad):
             yaw=math.atan2(nearest['pos'][1]-p[1],nearest['pos'][0]-p[0])
         elif t-state.npc_hurt<2.5 and state.npc_bearing is not None: yaw=state.npc_bearing
         elif t-state.last_hurt<2.5: yaw=state.hurt_bearing
+        elif (heard := sound_scan_bearing(state, obs)) is not None: yaw=heard
         elif any(action['move']): yaw=math.atan2(action['move'][1],action['move'][0])+1.15*math.sin(t*1.3)
         else: yaw=me['aim'][0]+.35
         action['aim']=[yaw,0]

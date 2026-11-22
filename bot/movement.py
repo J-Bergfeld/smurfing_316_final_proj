@@ -6,59 +6,6 @@ from collections import deque
 from .geometry import distance, angle_diff
 
 
-def predictive_dodge(world, me, shots, desired, boost, deadline):
-    """Compare eight headings using acceleration and relative projectile motion."""
-    p = me['pos']; stats = me['stats']; threats = []
-    for shot in shots:
-        if shot['kind'] == 'mortar':
-            continue
-        q, v = shot['pos'], shot['vel']
-        if math.dist(q[:2], p[:2]) > 100:
-            continue
-        vx, vy = v[0] - me['vel'][0], v[1] - me['vel'][1]
-        speed2 = vx * vx + vy * vy
-        if speed2 < 1:
-            continue
-        t = ((p[0]-q[0])*vx + (p[1]-q[1])*vy) / speed2
-        if 0 < t < .8 and math.hypot(q[0]+vx*t-p[0], q[1]+vy*t-p[1]) < stats['radius'] + 7:
-            threats.append(shot)
-    if not threats:
-        return None
-    speed = stats.get('boost_speed', 19.5) if boost else stats.get('walk_speed', 11.7)
-    accel = stats.get('ground_accel', 58.5) if me['grounded'] else stats.get('air_accel', 12.)
-    magnitude = math.hypot(*desired)
-    wanted = [v / magnitude for v in desired] if magnitude > .01 else [0., 0.]
-    candidates = [wanted, [0., 0.]] + [[math.cos(i*math.pi/4), math.sin(i*math.pi/4)] for i in range(8)]
-    best = None
-    for direction in candidates:
-        if time.perf_counter() >= deadline:
-            break
-        x, y = p[:2]; vx, vy = me['vel'][:2]; risk = 0.
-        for step in range(1, 8):
-            dx, dy = direction[0]*speed-vx, direction[1]*speed-vy
-            delta = math.hypot(dx, dy); factor = min(1., accel*.1/max(delta, 1e-9))
-            vx += dx*factor; vy += dy*factor
-            old = (x, y); x += vx*.1; y += vy*.1
-            if me['grounded'] and not world.line_walkable(old, (x, y)):
-                risk += 30
-                break
-            t = step*.1
-            for shot in threats:
-                q, v = shot['pos'], shot['vel']
-                if p[2]-.6 <= q[2]+v[2]*t <= p[2]+stats['height']+.6:
-                    ax, ay = q[0]+v[0]*(t-.1)-old[0], q[1]+v[1]*(t-.1)-old[1]
-                    bx, by = q[0]+v[0]*t-x, q[1]+v[1]*t-y
-                    dx, dy = bx-ax, by-ay
-                    u = max(0., min(1., -(ax*dx+ay*dy)/max(dx*dx+dy*dy, 1e-9)))
-                    gap = math.hypot(ax+u*dx, ay+u*dy)
-                    if gap < stats['radius'] + 1:
-                        risk += 80
-        score = (direction[0]*wanted[0]+direction[1]*wanted[1])*5 - risk
-        if best is None or score > best[0]:
-            best = (score, direction)
-    return best[1] if best else None
-
-
 class MovementSupport:
     def __init__(self):
         self.history=[]
@@ -158,11 +105,6 @@ class Movement:
                 action['move'] = blended
             boost_dodge = laser or (self.cornered_boost and mode == 'cornered' and me['grounded'])
             if boost_dodge and me['energy']>25: action['boost']=True
-        if mode not in ('unstuck','dodge') and obs.get('projectiles'):
-            forecast=predictive_dodge(self.world,me,obs['projectiles'],action['move'],action['boost'],
-                                      min(self.action_deadline,time.perf_counter()+.003))
-            if forecast is not None:
-                action['move']=forecast
         if any(action['move']) and math.hypot(*me['vel'][:2])<1.2 and me['grounded']:
             if self.stuck_since<0: self.stuck_since=t
             elif t-self.stuck_since>.7:
