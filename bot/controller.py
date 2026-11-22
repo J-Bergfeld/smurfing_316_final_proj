@@ -91,10 +91,10 @@ class Controller:
             action['move']=self.movement.navigate(me,goal,t); action['boost']=me['energy']>5; mode='zone'
         elif recovery_move is not None:
             action['move']=recovery_move; action['boost']=me['energy']>10 and any(recovery_move); mode='recover'
-        elif field_eligible and (step := self.field.choose(self, obs, target)) is not None:
+        elif field_eligible and (not self.retreat or finishing or late) and (step := self.field.choose(self, obs, target)) is not None:
             action['move'] = step
             mode = 'positional-field'
-        elif (self.corner_duel and squad and not urgent and me['grounded']
+        elif (self.corner_duel and squad and not urgent and me['grounded'] and (not self.retreat or finishing or late)
               and (duel := self.movement.isolate_hunter(obs, self.attacker_memory)) is not None):
             action['move'], target = duel
             foe = target

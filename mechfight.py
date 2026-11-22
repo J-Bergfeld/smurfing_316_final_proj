@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import json
 import queue
-import signal
 import sys
 import threading
 import traceback
@@ -486,28 +485,6 @@ draw = Draw()
 _CONTINUOUS = ("move", "aim", "boost")
 
 
-class _DecisionTimeout(Exception):
-    pass
-
-
-def _call_with_deadline(bot: Any, obs: Dict[str, Any], seconds: float) -> Dict[str, Any]:
-    """Interrupt a slow decision so the caller can send a current-tick fallback.
-
-    Python handles SIGALRM on its main thread. A native call that does not
-    return to Python can still overrun, so this is not a hard real-time guarantee.
-    """
-    def expired(_signum: int, _frame: Any) -> None:
-        raise _DecisionTimeout()
-
-    previous = signal.signal(signal.SIGALRM, expired)
-    signal.setitimer(signal.ITIMER_REAL, seconds)
-    try:
-        return dict(bot.act(obs) or {})
-    finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous)
-
-
 def log(*args: Any) -> None:
     """print() to stderr: stdout is the protocol. Your team sees stderr after each match."""
     print(*args, file=sys.stderr, flush=True)
@@ -533,7 +510,6 @@ def run(make_bot: Any) -> None:
     bot = None
     last: Dict[str, Any] = {}
     errors = 0
-    decision_budget = .035
     while True:
         batch = [q.get()]
         while True:  # drain the queue: only the newest observation matters
@@ -552,8 +528,6 @@ def run(make_bot: Any) -> None:
             kind = msg.get("type")
             if kind == "hello":
                 draw.caps = msg.get("config", {}).get("debug", {})
-                tick_budget_ms = msg.get("config", {}).get("bot", {}).get("tick_budget_ms", 50)
-                decision_budget = max(.001, min(.035, float(tick_budget_ms) * .0007))
                 try:
                     bot = make_bot(msg)
                 except Exception:
@@ -570,12 +544,8 @@ def run(make_bot: Any) -> None:
         draw.clear()
         if bot is not None:
             try:
-                action = _call_with_deadline(bot, latest, decision_budget)
+                action = dict(bot.act(latest) or {})
                 last = {k: action[k] for k in _CONTINUOUS if k in action}
-            except _DecisionTimeout:
-                # Mirror server coasting, but respond for this tick before the
-                # wire deadline. Never repeat a previous one-shot command.
-                action = dict(last)
             except Exception:
                 errors += 1
                 if errors <= 5 or errors % 100 == 0:

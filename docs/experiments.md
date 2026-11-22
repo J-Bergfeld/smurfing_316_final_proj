@@ -6,6 +6,16 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 ## Official practice — builders-4
 
+**Aggressive retreat and targeting candidate:** Based on the runtime and Docker
+settings of `955e6bf` (5.47), with the later favorable-fight initiation and
+timeout fallback removed. In practice, retreat starts at higher health when
+outnumbered or losing a one-on-one exchange and persists for three seconds;
+offensive positioning yields to retreat unless finishing or in the late game.
+Vulnerable visible enemies can be engaged farther away and have a stronger
+priority over the current target. This combines two changes, so an official
+result cannot isolate their contributions. Longer retreats may sacrifice damage
+or expose the rear, and switching may waste aim time. Official score pending.
+
 **Favorable-fight candidate — official 5.03:** The user reports that `3a9ff29`
 scored **5.03** in builders-4. The run ID and timestamp were not supplied. This
 is the direct parent and official baseline for the `afef1f3` rearchitecture

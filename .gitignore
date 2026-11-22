@@ -1,4 +1,7 @@
 
+# Python bytecode caches
+__pycache__/
+
 # Local simulator opponents and downloaded review archives
 /opponents/
 /competitors/
