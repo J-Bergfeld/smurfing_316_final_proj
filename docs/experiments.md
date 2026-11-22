@@ -9,6 +9,7 @@ Practice scores are mean placement points; local simulator results are hypothese
 | Commit / settings | Score | Squad-proxy mean / official minus proxy | Status / provenance |
 | --- | ---: | --- | --- |
 | `c5aeebba81a5`, default, second run | **5.23** | — | Best reported official practice score. User-reported rerun of the 5.17 shared-torso entry. |
+| `4d02e84`, supply drops and late-circle play with shared-torso gun aim | 5.13 | — | User-reported official practice score for the combined version. |
 | `c68975862d2b`, supply drops and late-circle play with legacy gun aim | 5.17 | 5.56 on the 16-seed validation panel | User-reported official practice score. |
 | `47291ba`, packaged cornered boost, cover recovery and spacing | 4.88 | Unknown | User-reported official trial. Scored 0.02 below the `26db76c` cornered-dodge trial and 0.29 below the then-best 5.17. |
 | `4991fa6`, default | **5.17** | 3.81 / +1.36; approximate control, see note | First reported entry to reach 5.17. User confirmed commit and defaults; submission time and run ID unknown. |
@@ -54,7 +55,7 @@ The final 16 seeds were fresh for the champion and laser variant. The simpler ca
 
 The optional `BOT_LASER_RUSH=1` variant scans for lasers when calm, prioritizes reachable lasers and boosts toward them above 60 energy. It acquired a laser within 30 seconds in 9 of 16 validation matches versus 4 of 16 for the champion, but lost 0.56 placement points per match on that panel. It stays off in the packaged candidate. The official score for `c68975862d2b` was **5.17**.
 
-The next practice candidate combines these supply-drop and late-circle tactics with the shared-torso gun check from `c5aeebba81a5`. Its Dockerfile selects `BOT_GUN_AIM_CHECK=actual`. The official score for this combination is pending.
+Commit `4d02e84` combined these supply-drop and late-circle tactics with the shared-torso gun check from `c5aeebba81a5` by setting `BOT_GUN_AIM_CHECK=actual`. It scored **5.13** in official practice, 0.04 below its parent’s 5.17 and 0.10 below the shared-torso entry’s best run.
 
 All panels used simulator `e322ffe`. Local raw evidence is in `mech-testing/tactics-screen-422715/`, `mech-testing/tactics-image-panel/` and `mech-testing/tactics-validation-422890/` (the later comparison is under `drops/`).
 
