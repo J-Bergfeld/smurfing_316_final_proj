@@ -6,7 +6,11 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 ## Official practice — builders-4
 
-**Favorable-fight candidate — official result pending:** On the
+**Favorable-fight candidate — official 5.03:** The user reports that `3a9ff29`
+scored **5.03** in builders-4. The run ID and timestamp were not supplied. This
+is the direct parent and official baseline for the `afef1f3` rearchitecture
+candidate, whose official result is pending. Independent random seeds limit
+what a score difference can establish. On the
 `955e6bf` strategy and Docker settings with the smart timeout fallback, practice
 may initiate a fight against a currently listed mech within 130 m and clear line
 of fire when health exceeds 60%, a gun or laser is ready, there is no other
@@ -67,6 +71,7 @@ to any individual mechanism. Run ID and timestamp were not supplied.
 | `7d09a1b` | Fixed upgrade order, positional field and corner duel on | 5.35 |
 | `9078ed6` | 5.47 baseline, predictive projectile dodge and timeout fallback | 5.29 |
 | `37d0167` | 5.47 baseline, combined movement changes | 5.11 |
+| `3a9ff29` | Favorable-fight initiation and timeout fallback | 5.03 |
 | `f36ede6` | 5.47 baseline, sound scanning and timeout fallback | 5.01 |
 | `a8a9e91` | 5.47 baseline, positional field off | 5.08 |
 | `e331335` | 5.47 baseline, corner duel off | 4.95 |
