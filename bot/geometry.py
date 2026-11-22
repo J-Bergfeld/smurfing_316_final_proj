@@ -174,6 +174,12 @@ def zone_goal(zone, x, y):
     if d < 1 or d <= r: return x,y
     return center[0]+dx/d*r,center[1]+dy/d*r
 
+# Compact ground-grid fit table: each level is 5% of a standard 2.5 x 9 m mech.
+FIT_RADIUS = 2.5
+FIT_HEIGHT = 9.
+FIT_LEVELS = 20
+
+
 class Arena:
     def __init__(self, directory, use_cache=True):
         path=Path(directory)/'v2'
@@ -181,6 +187,9 @@ class Arena:
         raw=(path/'terrain.i16').read_bytes(); n=self.terrain['nx']*self.terrain['ny']
         if len(raw)!=n*2: raise ValueError('terrain size mismatch')
         self.heights=struct.unpack('<%dh'%n,raw); self.prisms=data['prisms']; self.grid={}; self._free={}; self._surface={}; self._block_max={}
+        self.body_size = (FIT_RADIUS, FIT_HEIGHT)
+        self.fit_level = 0
+        self.swept_fit_level = 12
         self.baked=None
         cache=Path(__file__).with_name('terrain_grid.bin.gz')
         manifest=cache.with_name(cache.name+'.meta.json')
@@ -203,7 +212,10 @@ class Arena:
             for _ in range(slab_count):
                 index,size=struct.unpack_from('<ii',baked,offset); offset+=8
                 slabs[index]=[struct.unpack_from('<ff',baked,offset+j*8) for j in range(size)]; offset+=size*8
-            self.baked={'nx':nx,'ny':ny,'main':main,'blocked':blocked,'surface':surf,'clearance':clearance,'component':comp,'top':top,'slabs':slabs}
+            fits = baked[offset:]
+            if fits and len(fits) != count:
+                raise ValueError('invalid body fit table')
+            self.baked={'fits':fits,'nx':nx,'ny':ny,'main':main,'blocked':blocked,'surface':surf,'clearance':clearance,'component':comp,'top':top,'slabs':slabs}
         for i,prism in enumerate(self.prisms):
             xs=prism['ring'][::2]; ys=prism['ring'][1::2]
             prism['box']=(min(xs),min(ys),max(xs),max(ys))
@@ -351,18 +363,34 @@ class Arena:
             total+=d
         return total/(24*200)
 
+    def set_body_size(self, radius, height):
+        if self.body_size == (radius, height):
+            return
+        self.body_size = (radius, height)
+        self.fit_level = max(0, math.ceil((max(radius / FIT_RADIUS, height / FIT_HEIGHT) - 1) * 20 - 1e-9))
+        # A grid sample can be sqrt(2) metres from its 2 m cell center.
+        self.swept_fit_level = max(self.fit_level, math.ceil(((radius + math.sqrt(2)) / FIT_RADIUS - 1) * 20))
+        self._free.clear()
+
     def free_cell(self,cell):
         if self.baked:
             i,j=cell
             if not (0<=i<self.baked['nx'] and 0<=j<self.baked['ny']): return False
             idx=j*self.baked['nx']+i
             self._surface[cell]=self.baked['surface'][idx]
-            return not self.baked['blocked'][idx]
+            if self.baked['blocked'][idx]:
+                return False
+            fits = self.baked['fits']
+            if self.fit_level == 0 or (fits and self.fit_level <= fits[idx]):
+                return True
+            if cell not in self._free:
+                self._free[cell] = self.standable(*self.cell_pos(cell), self._surface[cell], *self.body_size)
+            return self._free[cell]
         if cell in self._free: return self._free[cell]
         x,y=self.cell_pos(cell)
         if not self.inside(x,y): self._free[cell]=False; return False
         z=self.walk_at(x,y); self._surface[cell]=z
-        self._free[cell]=z-self.ground(x,y)<=1.5 and self.standable(x,y,z)
+        self._free[cell]=z-self.ground(x,y)<=1.5 and self.standable(x,y,z,*self.body_size)
         return self._free[cell]
 
     def nearest_free(self,cell):
@@ -412,11 +440,24 @@ class Arena:
         return list(reversed(route)),best==target
 
     def line_walkable(self,a,b):
+        if not self.standable(*b[:2], self.walk_at(*b[:2]), *self.body_size):
+            return False
         dist=math.dist(a[:2],b[:2]); steps=int(dist)+1; last=self.cell(*a[:2]); previous=self.walk_at(*self.cell_pos(last))
         for i in range(1,steps+1):
-            t=i/steps; cell=self.cell(a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t)
+            t = i / steps
+            x, y = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+            cell = self.cell(x, y)
+            if self.fit_level:
+                fits = self.baked['fits'] if self.baked else None
+                if not fits or fits[cell[1]*self.baked['nx'] + cell[0]] < self.swept_fit_level:
+                    if not self.standable(x, y, self.walk_at(x, y), *self.body_size):
+                        return False
             if cell==last: continue
-            x,y=self.cell_pos(cell); surface=self.walk_at(x,y)
-            if not self.free_cell(cell) or surface-previous>3.1: return False
+            diagonal = cell[0] != last[0] and cell[1] != last[1]
+            if diagonal and (not self.free_cell((cell[0], last[1])) or not self.free_cell((last[0], cell[1]))):
+                return False
+            if not self.free_cell(cell): return False
+            surface = self._surface[cell]
+            if surface - previous > (3.1 if diagonal else 2.2): return False
             last,previous=cell,surface
         return True

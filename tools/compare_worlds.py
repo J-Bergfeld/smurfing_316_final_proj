@@ -24,13 +24,14 @@ def read_grid(path,terrain_count):
     for _ in range(slab_count):
         index,size=struct.unpack_from('<ii',data,offset); offset+=8
         slabs[index]=[struct.unpack_from('<ff',data,offset+i*8) for i in range(size)]; offset+=size*8
-    if offset!=len(data): raise ValueError('unexpected cache length')
-    return {'header':(nx,ny,main),'blocked':blocked,'surface':surface,'clearance':clearance,'component':component,'top':top,'slabs':slabs}
+    fits = data[offset:]
+    if fits and len(fits)!=count: raise ValueError('unexpected cache length')
+    return {'fits':fits,'header':(nx,ny,main),'blocked':blocked,'surface':surface,'clearance':clearance,'component':component,'top':top,'slabs':slabs}
 
 
 def compare(a,b):
     out={'header_equal':a['header']==b['header']}
-    for key in ('blocked','surface','clearance','component','top'):
+    for key in ('blocked','surface','clearance','component','top','fits'):
         x,y=a[key],b[key]
         differences=[abs(left-right) for left,right in zip(x,y) if left!=right]
         out[key]={'length_equal':len(x)==len(y),'different':len(differences),'max_difference':max(differences,default=0)}

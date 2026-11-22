@@ -12,6 +12,8 @@ from .world import update_perception
 class Controller:
     def __init__(self,hello):
         self.cfg=hello['config']; self.world=Arena(hello['map']['dir']); self.rng=random.Random(hello.get('seed') or hello.get('slot',0)+1)
+        self.body_size = (self.cfg['mech']['radius'], self.cfg['mech']['height'])
+        self.world.set_body_size(*self.body_size)
         self.tracks={}; self.items={}; self.hits={}; self.attacker_memory={}; self.kills=set(); self.initial=None; self.unexplained=0; self.ffa=False
         self.last_hurt=-100.; self.last_threat=-100.; self.lose_at=-100.; self.retreat=False; self.hold=None; self.phase=None
         self.target_id=None; self.target_at=-100.; self.loot_id=None; self.loot_since=0; self.bad={}
@@ -33,6 +35,15 @@ class Controller:
     def act(self,obs):
         self.action_deadline=time.perf_counter()+.027
         self.movement.action_deadline=self.action_deadline
+        stats = obs['self']['stats']
+        size = (stats['radius'], stats['height'])
+        if size != self.body_size:
+            self.world.set_body_size(*size)
+            self.body_size = size
+            self.movement.path = []
+            self.movement.unstuck_until = 0.
+            self.movement.cover = None
+            self.movement.home_xy = None
         self.update_world(obs); me=obs['self']; p=me['pos']; t=obs['t']; z=obs['zone']; hp=me['hp']/max(1,me['max_hp'])
         practice = not self.ffa and t > 20
         hide = practice and self.late_hide and z['next_radius'] <= 140 and obs['alive'] > 3

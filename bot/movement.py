@@ -99,13 +99,23 @@ class Movement:
         dodge,laser=self.avoid_projectiles(obs)
         if mode!='unstuck' and any(dodge):
             move=action['move']; mx,my=move[0]*.4+dodge[0]*.9,move[1]*.4+dodge[1]*.9; length=math.hypot(mx,my)
-            action['move']=[mx/max(1,length),my/max(1,length)]
+            blended = [mx/max(1,length), my/max(1,length)]
+            p = me['pos']
+            if not me['grounded'] or self.world.line_walkable(p, (p[0]+4*blended[0], p[1]+4*blended[1])):
+                action['move'] = blended
             boost_dodge = laser or (self.cornered_boost and mode == 'cornered' and me['grounded'])
             if boost_dodge and me['energy']>25: action['boost']=True
         if any(action['move']) and math.hypot(*me['vel'][:2])<1.2 and me['grounded']:
             if self.stuck_since<0: self.stuck_since=t
             elif t-self.stuck_since>.7:
-                angle=self.rng.random()*math.tau; self.unstuck_dir=(math.cos(angle),math.sin(angle)); self.unstuck_until=t+.5
+                angle = self.rng.random() * math.tau
+                p = me['pos']
+                for offset in (0, math.pi/2, -math.pi/2, math.pi):
+                    dx, dy = math.cos(angle+offset), math.sin(angle+offset)
+                    if self.world.line_walkable(p, (p[0]+6*dx, p[1]+6*dy)):
+                        self.unstuck_dir = (dx, dy)
+                        self.unstuck_until = t + .5
+                        break
                 self.stuck_since=-1.; self.path=[]; action['jump']=True
         else: self.stuck_since=-1.
 
@@ -137,14 +147,15 @@ class Movement:
         if not self.path or self.path_goal is None or math.dist(goal[:2],self.path_goal)>5 or t-self.path_at>2.5:
             remaining=max(0.,min(.025,self.action_deadline-time.perf_counter()))
             self.path,_=self.world.path(p,goal,budget_s=remaining); self.path_goal=goal[:2]; self.path_at=t
-        if not self.path: return unit(goal)
+        if not self.path: return [0., 0.]
         positions=[self.world.cell_pos(c) for c in self.path[:10]]
         index=min(range(len(positions)),key=lambda i:math.dist(positions[i],p[:2]))
         self.path=self.path[index:]
         for cell in reversed(self.path[:15]):
             point=self.world.cell_pos(cell)
             if self.world.line_walkable(p,point): return unit(point)
-        return unit(self.world.cell_pos(self.path[min(1,len(self.path)-1)]))
+        self.path = []
+        return [0., 0.]
 
     def isolate_hunter(self, obs, attackers):
         """Find a short ground step with exactly one incoming firing line."""

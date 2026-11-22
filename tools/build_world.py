@@ -12,7 +12,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from bot.geometry import Arena
+from bot.geometry import Arena, FIT_HEIGHT, FIT_LEVELS, FIT_RADIUS
 
 
 def f32(value):
@@ -100,7 +100,27 @@ def navigation(arena,ground):
     return nnx,nny,main,blocked,surface,clearance,component
 
 
-def write_grid(path,nav,top,slabs):
+def body_fit_table(arena, nav):
+    """Largest standard footprint that clears both the walls and overhead prisms."""
+    nx, ny, _, blocked, surface, _, _ = nav
+    levels = bytearray(nx * ny)
+    for i, occupied in enumerate(blocked):
+        if occupied:
+            continue
+        x, y = arena.cell_pos((i % nx, i // nx))
+        low, high = 0, FIT_LEVELS
+        while low < high:
+            level = (low + high + 1) // 2
+            scale = 1 + level / 20
+            if arena.standable(x, y, surface[i], FIT_RADIUS * scale, FIT_HEIGHT * scale):
+                low = level
+            else:
+                high = level - 1
+        levels[i] = low
+    return levels
+
+
+def write_grid(path,nav,top,slabs,fits):
     nx,ny,main,blocked,surface,clearance,component=nav
     def binary(values):
         values=array(values.typecode,values)
@@ -114,13 +134,14 @@ def write_grid(path,nav,top,slabs):
             for index,intervals in sorted(slabs.items()):
                 out.write(struct.pack('<ii',index,len(intervals)))
                 for base,upper in intervals: out.write(struct.pack('<ff',base,upper))
+            out.write(fits)
 
 
 def build(directory,output):
     arena=Arena(directory,use_cache=False)
     ground,top,slabs=rasterize(arena)
     nav=navigation(arena,ground)
-    write_grid(output,nav,top,slabs)
+    write_grid(output,nav,top,slabs,body_fit_table(arena,nav))
     source=Path(directory)/'v2'
     identity={'world_sha256':hashlib.sha256((source/'world.json').read_bytes()).hexdigest(),
               'terrain_sha256':hashlib.sha256((source/'terrain.i16').read_bytes()).hexdigest()}

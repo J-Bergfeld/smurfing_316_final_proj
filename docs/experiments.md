@@ -9,6 +9,8 @@ Practice scores are mean placement points; local simulator results are hypothese
 | Commit / settings | Score | Squad-proxy mean / official minus proxy | Status / provenance |
 | --- | ---: | --- | --- |
 | `c5aeebba81a5`, default, second run | **5.23** | — | Best reported official practice score. User-reported rerun of the 5.17 shared-torso entry. |
+| `b99a6135379f`, gun-only drum magazine | 5.02 | — | User-reported official practice score. |
+| `d8e77944b48b`, corner duel with gun-only drum magazine | 5.06 | — | User-reported official practice score. |
 | `10fb916`, corner duel with shared-torso aim | 5.21 | — | User-reported official practice score. |
 | `4d02e84`, supply drops and late-circle play with shared-torso gun aim | 5.13 | — | User-reported official practice score for the combined version. |
 | `c68975862d2b`, supply drops and late-circle play with legacy gun aim | 5.17 | 5.56 on the 16-seed validation panel | User-reported official practice score. |
@@ -60,13 +62,29 @@ Commit `4d02e84` combined these supply-drop and late-circle tactics with the sha
 
 All panels used simulator `e322ffe`. Local raw evidence is in `mech-testing/tactics-screen-422715/`, `mech-testing/tactics-image-panel/` and `mech-testing/tactics-validation-422890/` (the later comparison is under `drops/`).
 
+## Size-aware ground routing
+
+The official comparator is `d8e77944b48b` (5.06). The new candidate keeps its corner-duel and gun-only magazine settings. A byte per ground cell records the largest standard mech that fits horizontally and vertically, through double spawn size. Each observation supplies the actual radius and height. Larger or borderline dimensions use direct prism checks cached for the current body size. A size change invalidates the route, cover, shelter and unstuck direction. Shortcuts check diagonal side cells, and navigation waits or replans when it has no verified walkable step.
+
+The real map cell at (25, −326) fits the spawn mech and rejects the six-cube footprint. A scripted low bridge admits a small mech and routes a taller one around it. Open ground and diagonal corner clearance were also checked. The packaged bot answered 300/300 protocol observations within 50 ms. Official placement is pending.
+
+## Proposed positional field
+
+Start with one decision in practice: choosing the approach to cover in a multi-hunter encounter. Keep the existing target selection, gun control, emergency dodge and urgent zone rotation. Compare this later candidate with the submitted size-aware build. In the first field trial, loot may break a tie between safe routes. A high-value pickup must never make a blocked or lethal route eligible.
+
+1. **Generate reachable positions.** At build time, index candidate positions near the ends of building walls and around passages on the existing 2 m grid. Include positions on both sides of each corner. At decision time, add the current position and cells on the current route. Start with candidates within 40 m and discard positions outside the current footprint or without a route that beats the zone deadline. Treat the baked spawn-size component as a coarse filter. Verify the actual route at the observed size.
+2. **Build a local scalar field.** Give each reachable position a higher score for a usable firing line to the selected target, hard cover against additional hunters, time inside the next circle and a reachable useful pickup. Penalize exposure to multiple shooters and the time spent getting there. Normalize features into bounded ranges. Sample weapon range, recent damage and muzzle-to-body rays for visible mechs. A recently lost track decays with age. A sound contributes a weaker, widening sector based on bearing, distance band and age. Merge compatible sounds with visible tracks and cap overlapping sound penalties. A sound alone cannot establish a firing line or the presence of a second hunter.
+3. **Score the approach as well as the endpoint.** Shortlist the best few endpoints, then sample each route at intervals and estimate *seconds exposed to two shooters* using travel distance and current speed. Subtract this cost from destination value. A short run through open ground can lose to a longer route along a wall. Include staying put as a candidate. Recheck the next step every tick and keep the current destination until another offers a meaningful improvement or the route becomes invalid.
+4. **Bound the work.** Start with at most 24 endpoints, three shortlisted routes, and one field update every 0.5 game seconds. Re-evaluate sooner on a new attacker, a material zone change or growth. Share one wall-clock allowance (initially 3 ms) across candidate evaluation and routing, inside the controller deadline. On timeout, use the best fully verified route or the existing controller action. The proposed limits are starting values to check in the protocol replay.
+5. **Verify behavior before the official trial.** Use a corner with a short exposed approach and a longer sheltered one, a lone sound followed by a confirming sighting, tempting loot beyond an unsafe crossing, and a passage that closes after growth. Assert the route, the reason it won, and the response to an urgent zone. Record a compact breakdown of candidate scores in the local fixture harness. Use the restricted protocol check for latency and official practice for placement.
+
 ## Gun-only drum magazine trial
 
-This candidate uses the 5.23 shared-torso settings with corner duels, supply-drop pursuit and late-circle hiding disabled. When the gun is the only equipped weapon, drum magazine takes priority over gun damage and fire rate. Plating, armor and nanites retain priority over the magazine. Equipping a secondary restores the original upgrade order. Official score pending.
+This candidate uses the 5.23 shared-torso settings with corner duels, supply-drop pursuit and late-circle hiding disabled. When the gun is the only equipped weapon, drum magazine takes priority over gun damage and fire rate. Plating, armor and nanites retain priority over the magazine. Equipping a secondary restores the original upgrade order. Official score **5.02** at `b99a6135379f`.
 
 ## Corner duel with gun-only drum magazine
 
-This candidate uses the corner-duel configuration from `10fb916` (official score **5.21**) and the gun-only magazine preference from `b99a613`. Comparing it with `10fb916` tests the upgrade preference while holding combat tactics fixed. Official score pending.
+This candidate uses the corner-duel configuration from `10fb916` (official score **5.21**) and the gun-only magazine preference from `b99a613`. Comparing it with `10fb916` tests the upgrade preference while holding combat tactics fixed. Official score **5.06** at `d8e77944b48b`.
 
 ## Corner duel practice trial
 
