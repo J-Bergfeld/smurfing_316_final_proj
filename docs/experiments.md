@@ -6,7 +6,20 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 ## Official practice — builders-4
 
-**Fixed upgrade order:** User reports `7d09a1b` scored **5.35**. It keeps corner duel and the positional field enabled and removes the gun-only magazine priority. Run ID and timestamp were not supplied. The next roof-descent candidate uses this runtime as its comparator; the independent-seed score difference will not establish causality.
+**Movement candidate, not yet submitted:** A combined trial adds short-horizon
+projectile steering, clearance-increasing recovery after a stalled urgent zone
+route, a bounded top-surface jump/jet fallback, and eight-direction combat
+sampling. Roof descent, positional field and corner duel remain enabled. This
+changes multiple mechanisms at once, so an official score cannot identify
+which one helped or hurt. The surface planner is local and approximate; the
+collision and projectile forecasts are sampled, not engine-exact. Focused
+scenarios and the restricted protocol replay are checks of implementation and
+runtime compliance, not evidence of placement improvement. The remaining
+runtime strategy, including the gun-only magazine priority, matches the
+reported best `955e6bf` (5.47). Record independent seed variation, submission
+time and run ID when available.
+
+**Fixed upgrade order:** User reports `7d09a1b` scored **5.35**. It keeps corner duel and the positional field enabled and removes the gun-only magazine priority. Run ID and timestamp were not supplied. Independent-seed score differences do not establish causality.
 
 **Positional-field follow-up:** User reports `a8a9e91` scored **5.08** with positional field disabled, compared with 5.47 for `955e6bf` and 4.95 for `e331335` with corner duel disabled. These are independent-seed results, not proof of causality. Keep both tactics on for the next test. The next candidate removes the gun-only magazine priority, keeping the fixed upgrade order; it changes only `choose_loadout` on the 5.47 baseline. Earlier magazine comparisons were under the old scorer. Run IDs and timestamps were not supplied.
 

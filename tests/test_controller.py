@@ -141,10 +141,10 @@ class ControllerTests(unittest.TestCase):
         bot.world.path.return_value=([(0,0),(0,30)], False)
         self.assertEqual(bot.zone_route_time([0,0,0],[10,0],22,10),0.)
 
-    def test_fixed_upgrade_order_with_different_weapons(self):
+    def test_gun_only_magazine_priority(self):
         obs = observation()
         obs['offer'] = {'choices': [{'id': kind} for kind in ('gun_rate', 'gun_mag', 'gun_damage')]}
-        for secondary, expected in [(None, 2), ({'kind': 'laser'}, 2)]:
+        for secondary, expected in [(None, 1), ({'kind': 'laser'}, 2)]:
             with self.subTest(secondary=secondary):
                 obs['self']['weapons'] = [{'kind': 'gun'}, secondary]
                 self.assertEqual(choose_loadout(obs, HELLO['config'])['pick'], expected)

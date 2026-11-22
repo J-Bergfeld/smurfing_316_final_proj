@@ -40,6 +40,8 @@ class Controller:
         self.action_deadline=time.perf_counter()+.027
         self.movement.action_deadline=self.action_deadline
         self.movement.descending=False
+        self.movement.vertical_allowed=False
+        self.movement.surface_action=None
         stats = obs['self']['stats']
         size = (stats['radius'], stats['height'])
         if size != self.body_size:
@@ -51,6 +53,8 @@ class Controller:
             self.movement.home_xy = None
             self.movement.roof_exit = None
             self.movement.roof_exit_watch = None
+            self.movement.surface_route = []
+            self.movement.zero_route_since = None
         self.update_world(obs); me=obs['self']; p=me['pos']; t=obs['t']; z=obs['zone']; hp=me['hp']/max(1,me['max_hp'])
         # This submission is explicitly for the cooperative practice field.
         practice = True
@@ -61,6 +65,9 @@ class Controller:
         goal=zone_goal(z,*p[:2]); deadline=zone_deadline(self.hold,z,*p[:2],8); need=math.dist(p[:2],goal)*1.45/me['stats']['walk_speed']+4
         zone_margin=14 if squad and self.nav_method=='early_zone' else 3
         urgent=not me['in_zone'] or t+need+zone_margin>=deadline
+        if not urgent:
+            self.movement.zero_route_since=None
+            self.movement.surface_route=[]
         action={'tick':obs['tick'],'move':[0.,0.],'fire':[False,False],'boost':False,'jump':False}; mode='idle'
         shell=self.movement.avoid_shells(obs)
         field_eligible = self.field is not None and squad and not urgent and me['grounded']
@@ -91,6 +98,7 @@ class Controller:
         elif shell:
             action['move']=shell; action['boost']=me['energy']>15; mode='dodge'
         elif urgent and math.dist(p[:2],goal)>2:
+            self.movement.vertical_allowed=True
             action['move']=self.movement.navigate(me,goal,t); action['boost']=me['energy']>5; mode='zone'
         elif recovery_move is not None:
             action['move']=recovery_move; action['boost']=me['energy']>10 and any(recovery_move); mode='recover'
@@ -169,6 +177,8 @@ class Controller:
         self.movement.apply_evasion_and_recovery(obs,action,mode)
         if self.movement.descending:
             action['boost']=False
+        if self.movement.surface_action is not None and mode == 'zone':
+            action.update(self.movement.surface_action)
         apply_weapon_control(self,obs,action,target,foe,squad)
         if (self.laser_rush and not self.ffa and mode in ('idle', 'loot', 'home') and target is None
                 and t - self.last_threat > 3 and t - self.npc_hurt > 3

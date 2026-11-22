@@ -1,9 +1,183 @@
 """Local wall steering and staged recovery for the navigation controller."""
+import heapq
 import math
 import os
 import time
 from collections import deque
 from .geometry import distance, angle_diff
+
+
+def clearance(world, x, y, z, radius, height):
+    """Estimate how much of the current body fits at this point."""
+    if world.standable(x, y, z, radius, height):
+        return radius
+    lo, hi = 0., radius
+    for _ in range(5):
+        mid = (lo + hi) * .5
+        if world.standable(x, y, z, mid, height):
+            lo = mid
+        else:
+            hi = mid
+    return lo
+
+
+def escape_direction(world, me, goal, deadline):
+    """Find an exit whose sampled body clearance never decreases."""
+    x, y, z = me['pos']; stats = me['stats']
+    radius, height = stats['radius'], stats['height']
+    start = clearance(world, x, y, z, radius, height)
+    if start >= radius:
+        return None
+    base = math.atan2(goal[1] - y, goal[0] - x)
+    best = None
+    for offset in (0, 1, -1, 2, -2, 3, -3, 4):
+        if time.perf_counter() >= deadline:
+            break
+        a = base + offset * math.pi / 4
+        dx, dy = math.cos(a), math.sin(a)
+        previous = start
+        for step in range(1, 7):
+            if time.perf_counter() >= deadline:
+                return best[1] if best else None
+            sx, sy = x + dx * step, y + dy * step
+            if not world.inside(sx, sy):
+                break
+            c = clearance(world, sx, sy, z, radius, height)
+            if c + radius / 32 < previous:
+                break
+            previous = c
+            if c >= radius:
+                score = math.hypot(goal[0] - sx, goal[1] - sy) + step
+                if best is None or score < best[0]:
+                    best = (score, [dx, dy])
+                break
+    return best[1] if best else None
+
+
+def predictive_dodge(world, me, shots, desired, boost, deadline):
+    """Compare eight headings using acceleration and relative projectile motion."""
+    p = me['pos']; stats = me['stats']; threats = []
+    for shot in shots:
+        if shot['kind'] == 'mortar':
+            continue
+        q, v = shot['pos'], shot['vel']
+        if math.dist(q[:2], p[:2]) > 100:
+            continue
+        vx, vy = v[0] - me['vel'][0], v[1] - me['vel'][1]
+        speed2 = vx * vx + vy * vy
+        if speed2 < 1:
+            continue
+        t = ((p[0]-q[0])*vx + (p[1]-q[1])*vy) / speed2
+        if 0 < t < .8 and math.hypot(q[0]+vx*t-p[0], q[1]+vy*t-p[1]) < stats['radius'] + 7:
+            threats.append(shot)
+    if not threats:
+        return None
+    speed = stats.get('boost_speed', 19.5) if boost else stats.get('walk_speed', 11.7)
+    accel = stats.get('ground_accel', 58.5) if me['grounded'] else stats.get('air_accel', 12.)
+    magnitude = math.hypot(*desired)
+    wanted = [v / magnitude for v in desired] if magnitude > .01 else [0., 0.]
+    candidates = [wanted, [0., 0.]] + [[math.cos(i*math.pi/4), math.sin(i*math.pi/4)] for i in range(8)]
+    best = None
+    for direction in candidates:
+        if time.perf_counter() >= deadline:
+            break
+        x, y = p[:2]; vx, vy = me['vel'][:2]; risk = 0.
+        for step in range(1, 8):
+            dx, dy = direction[0]*speed-vx, direction[1]*speed-vy
+            delta = math.hypot(dx, dy); factor = min(1., accel*.1/max(delta, 1e-9))
+            vx += dx*factor; vy += dy*factor
+            old = (x, y); x += vx*.1; y += vy*.1
+            if me['grounded'] and not world.line_walkable(old, (x, y)):
+                risk += 30
+                break
+            t = step*.1
+            for shot in threats:
+                q, v = shot['pos'], shot['vel']
+                if p[2]-.6 <= q[2]+v[2]*t <= p[2]+stats['height']+.6:
+                    ax, ay = q[0]+v[0]*(t-.1)-old[0], q[1]+v[1]*(t-.1)-old[1]
+                    bx, by = q[0]+v[0]*t-x, q[1]+v[1]*t-y
+                    dx, dy = bx-ax, by-ay
+                    u = max(0., min(1., -(ax*dx+ay*dy)/max(dx*dx+dy*dy, 1e-9)))
+                    gap = math.hypot(ax+u*dx, ay+u*dy)
+                    if gap < stats['radius'] + 1:
+                        risk += 80
+        score = (direction[0]*wanted[0]+direction[1]*wanted[1])*5 - risk
+        if best is None or score > best[0]:
+            best = (score, direction)
+    return best[1] if best else None
+
+
+def surface_path(world, me, goal, deadline, spacing=8):
+    """Find a short top-surface route, including drops and jet climbs."""
+    p = me['pos']; radius = me['stats']['radius']; height = me['stats']['height']
+    ox, oy = p[:2]; dx, dy = goal[0]-ox, goal[1]-oy; distance = math.hypot(dx, dy)
+    if distance < 1:
+        return None
+    scale = min(1., 48 / distance)
+    target = (round(dx*scale/spacing), round(dy*scale/spacing))
+    if target == (0, 0):
+        return None
+    drain = me['stats'].get('jet_drain', 15.)
+    max_climb = min(40., max(0., me['energy']-18) / max(1., drain)*8.9)
+    def pos(cell):
+        return ox+cell[0]*spacing, oy+cell[1]*spacing
+    levels = {(0, 0): p[2]}
+    def level(cell):
+        if cell not in levels:
+            x, y = pos(cell)
+            if not world.inside(x, y):
+                levels[cell] = None
+            else:
+                z = world.walk_at(x, y)
+                levels[cell] = z if world.standable(x, y, z, radius, height) else None
+        return levels[cell]
+    def surface_clear(a, b, z, supported):
+        ax, ay = pos(a); bx, by = pos(b)
+        for i in range(1, 5):
+            x, y = ax+(bx-ax)*i/4, ay+(by-ay)*i/4
+            if not world.standable(x, y, z, radius, height):
+                return False
+            if supported and abs(world.walk_at(x, y)-z)>1.2:
+                return False
+        return True
+    start = (0, 0); queue = [(0., start)]; costs = {start: 0.}; parent = {}
+    for _ in range(200):
+        if not queue or time.perf_counter() >= deadline:
+            break
+        _, cell = heapq.heappop(queue)
+        if cell == target:
+            route = []
+            while cell != start:
+                x, y = pos(cell); route.append((x, y, levels[cell])); cell = parent[cell]
+            return list(reversed(route))
+        z = level(cell)
+        for dx, dy in ((1,0),(-1,0),(0,1),(0,-1),(1,1),(1,-1),(-1,1),(-1,-1)):
+            nxt = (cell[0]+dx, cell[1]+dy)
+            if abs(nxt[0]) > 7 or abs(nxt[1]) > 7:
+                continue
+            nz = level(nxt)
+            if nz is None or (nz-z > 1.2 and nz-z > max_climb):
+                continue
+            rise = nz-z
+            if rise > 1.2:
+                x, y = pos(cell)
+                if not all(world.standable(x, y, z+(rise+1)*i/4, radius, height) for i in range(1,5)):
+                    continue
+                if not surface_clear(cell, nxt, nz+1, False):
+                    continue
+            elif rise >= -1.2:
+                elevated = hasattr(world, 'ground') and z-world.ground(*pos(cell)) > 3
+                if elevated:
+                    if not surface_clear(cell, nxt, z, True):
+                        continue
+                elif not world.line_walkable(pos(cell), pos(nxt)):
+                    continue
+            cost = costs[cell]+spacing*math.hypot(dx,dy)+(10+rise*2 if rise>1.2 else 0)
+            if cost < costs.get(nxt, math.inf):
+                costs[nxt] = cost; parent[nxt] = cell
+                h = math.hypot(target[0]-nxt[0], target[1]-nxt[1])*spacing
+                heapq.heappush(queue, (cost+h, nxt))
+    return None
 
 
 class MovementSupport:
@@ -95,6 +269,36 @@ class Movement:
         self.roof_exit=None; self.roof_exit_at=-100.; self.roof_exit_watch=None; self.roof_exit_goal=None
         self.descending=False
         self.roof_exit_bans={}
+        self.surface_route=[]; self.surface_goal=None; self.surface_at=-100.
+        self.surface_action=None; self.vertical_allowed=False
+        self.zero_route_since=None
+
+    def follow_surface(self, me, goal, t):
+        p=me['pos']
+        if self.surface_route and (t-self.surface_at > 6 or math.dist(goal[:2],self.surface_goal)>8):
+            self.surface_route=[]
+        while self.surface_route and math.dist(p[:2],self.surface_route[0][:2])<3 and abs(p[2]-self.surface_route[0][2])<2:
+            self.surface_route.pop(0)
+        if not self.surface_route:
+            route=surface_path(self.world,me,goal,min(self.action_deadline,time.perf_counter()+.004))
+            if not route:
+                return None
+            self.surface_route=route; self.surface_goal=goal[:2]; self.surface_at=t
+        x,y,z=self.surface_route[0]; d=math.hypot(x-p[0],y-p[1])
+        move=[(x-p[0])/d,(y-p[1])/d] if d>.1 else [0.,0.]
+        rise=z-p[2]; jump=False; boost=False
+        if rise>1.2:
+            drain=me['stats'].get('jet_drain',15.)
+            need=rise/8.9*drain+18
+            if me['grounded']:
+                if me['energy']>=need:
+                    jump=True
+                else:
+                    move=[0.,0.]
+            else:
+                boost=me['energy']>3 and p[2]<z+1
+        self.surface_action={'jump':jump,'boost':boost}
+        return move
 
     def roof_descent(self, me, goal, t):
         """Find a clear, supported route to a ground landing from a roof.
@@ -159,6 +363,11 @@ class Movement:
                 action['move'] = blended
             boost_dodge = laser or (self.cornered_boost and mode == 'cornered' and me['grounded'])
             if boost_dodge and me['energy']>25: action['boost']=True
+        if mode not in ('unstuck','dodge') and obs.get('projectiles') and not self.surface_action:
+            forecast=predictive_dodge(self.world,me,obs['projectiles'],action['move'],action['boost'],
+                                      min(self.action_deadline,time.perf_counter()+.003))
+            if forecast is not None:
+                action['move']=forecast
         if not self.descending and any(action['move']) and math.hypot(*me['vel'][:2])<1.2 and me['grounded']:
             if self.stuck_since<0: self.stuck_since=t
             elif t-self.stuck_since>.7:
@@ -196,25 +405,54 @@ class Movement:
     def navigate(self,me,goal,t):
         p=me['pos']; dx,dy=goal[0]-p[0],goal[1]-p[1]; d=math.hypot(dx,dy)
         if d<.8: return [0.,0.]
+        if self.vertical_allowed and self.surface_route:
+            route=self.follow_surface(me,goal,t)
+            if route is not None: return route
         if os.getenv('BOT_ROOF_DESCENT','1') == '1' and hasattr(self.world, 'ground'):
             descent=self.roof_descent(me,goal,t)
             if descent is not None:
                 self.descending=True
                 return descent
         unit=lambda point:[(point[0]-p[0])/max(1e-9,math.dist(p[:2],point[:2])),(point[1]-p[1])/max(1e-9,math.dist(p[:2],point[:2]))]
-        if d<45 and self.world.line_walkable(p,goal): return unit(goal)
+        if d<45 and self.world.line_walkable(p,goal):
+            self.zero_route_since=None
+            return unit(goal)
         if not self.path or self.path_goal is None or math.dist(goal[:2],self.path_goal)>5 or t-self.path_at>2.5:
-            remaining=max(0.,min(.025,self.action_deadline-time.perf_counter()))
+            remaining=max(0.,min(.025,self.action_deadline-time.perf_counter()-(.005 if self.vertical_allowed else 0)))
             self.path,_=self.world.path(p,goal,budget_s=remaining); self.path_goal=goal[:2]; self.path_at=t
-        if not self.path: return [0., 0.]
+        if not self.path:
+            return self.failed_route(me,goal,t)
         positions=[self.world.cell_pos(c) for c in self.path[:10]]
         index=min(range(len(positions)),key=lambda i:math.dist(positions[i],p[:2]))
         self.path=self.path[index:]
         for cell in reversed(self.path[:15]):
             point=self.world.cell_pos(cell)
-            if self.world.line_walkable(p,point): return unit(point)
+            if self.world.line_walkable(p,point):
+                self.zero_route_since=None
+                return unit(point)
         self.path = []
-        return [0., 0.]
+        return self.failed_route(me,goal,t)
+
+    def failed_route(self,me,goal,t):
+        if not self.vertical_allowed:
+            self.zero_route_since=None
+            return [0.,0.]
+        p=me['pos']
+        if self.zero_route_since is None:
+            self.zero_route_since=(t,p[:2])
+            return [0.,0.]
+        if math.dist(p[:2],self.zero_route_since[1]) >= 1:
+            self.zero_route_since=(t,p[:2])
+            return [0.,0.]
+        if t-self.zero_route_since[0] < 1:
+            return [0.,0.]
+        deadline=min(self.action_deadline,time.perf_counter()+.004)
+        if me['grounded']:
+            direction=escape_direction(self.world,me,goal,deadline)
+            if direction is not None:
+                return direction
+        direction=self.follow_surface(me,goal,t)
+        return direction if direction is not None else [0.,0.]
 
     def isolate_hunter(self, obs, attackers):
         """Find a short ground step with exactly one incoming firing line."""
@@ -295,7 +533,7 @@ class Movement:
         cubes=[item for kind,item,_ in items.values() if kind=='cubes' and math.dist(p[:2],item['pos'][:2])<40 and abs(item['pos'][2]-p[2])<4]
         cube=min(cubes,key=lambda item:math.dist(p[:2],item['pos'][:2])) if cubes else None
         blocked_side=False; deadline=min(self.action_deadline,time.perf_counter()+.015)
-        for i in range(-1,32 if not squad else 16):
+        for i in [-1, *range(0, 32 if not squad else 16, 2)]:
             if time.perf_counter()>=deadline: break
             a=(i%16)*math.pi/8; dx,dy=(math.cos(a),math.sin(a)) if i>=0 else (0.,0.); r=6*(1+i//16) if i>=0 else 0; x,y=p[0]+r*dx,p[1]+r*dy
             if i>=0 and (not self.world.line_walkable(p,(x,y)) or not self.world.free_cell(self.world.cell(x,y))):
