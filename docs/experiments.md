@@ -17,6 +17,13 @@ delta was −0.375 ± 0.420 SE; these small and timing-sensitive samples do not
 establish official performance. Raw data and the screened diff are in ignored
 local files `mech-testing/jack-test/paired.json` and `candidate.patch`.
 
+The user reported an official **5.15** for the subsequently submitted
+`c776cb3` configuration, with finish approach and reload cover disabled and
+both dev policies enabled. That is 0.08 below the reported 5.23 for `835d4a7`.
+The run ID and timestamp are not recorded. The two policies changed together,
+so the aggregate scores cannot identify which change caused the difference;
+the official match outcomes and timing variation are also unknown.
+
 After merging `6d086c3`, eight new seeds 424100–424107 using its packaged
 reload-cover settings averaged 5.5 for Sam's aim and reload versus 6.375 for
 both dev policies (paired +0.875, SE 0.99; no late or invalid replies). The two
@@ -37,6 +44,7 @@ Ten focused behavior checks passed. The packaged protocol check passed with 298 
 
 | Commit / settings | Score | Squad-proxy mean / official minus proxy | Status / provenance |
 | --- | ---: | --- | --- |
+| `c776cb3`, dev aim and reload; finish approach and reload cover off | 5.15 | — | User-reported official score; run ID and timestamp unknown. |
 | `67f32ba`, finish approach | 5.08 | — | User-reported official practice score. |
 | `835d4a7`, positional field | **5.23** | — | User-reported official practice score. Retained as the baseline for the finish approach trial. |
 | `c5aeebba81a5`, default, second run | **5.23** | — | Best reported official practice score. User-reported rerun of the 5.17 shared-torso entry. |
