@@ -36,7 +36,8 @@ class CornerDuelTests(unittest.TestCase):
 
     def controller(self, enabled):
         with patch.dict('os.environ', {'BOT_CORNER_DUEL': str(int(enabled)),
-                        'BOT_NAV_METHOD': 'legacy', 'BOT_SUPPLY_DROPS': '0'}):
+                        'BOT_NAV_METHOD': 'legacy', 'BOT_SUPPLY_DROPS': '0',
+                        'BOT_POSITIONAL_FIELD': '0', 'BOT_FINISH_APPROACH': '0'}):
             bot = Controller(HELLO)
         bot.world = bot.movement.world = self.map
         return bot

@@ -2,12 +2,19 @@
 
 Practice scores are mean placement points; local simulator results are hypotheses, not official predictions. The current priority is improving practice placement to qualify. [Practice implementation plan](practice-improvement-plan.md) · [Historical experiments and calibration](experiments-history.md) · [Simulator limitations](simulator.md).
 
+## Isolated wounded opponent trial
+
+Parent `835d4a7` scored **5.23** in official practice. The packaged candidate enables `BOT_FINISH_APPROACH=1`. During practice, a healthy mech with a ready weapon closes to a desired range of 20 m against a wounded, isolated opponent and defers cube collection during the approach. The hypothesis is that maintaining contact converts a retreating opponent into a placement point. The risk is taking extra damage before the next hunter arrives. Compare the candidate with its positional-field parent on the official platform. Official result pending.
+
+Ten focused behavior checks passed. The packaged protocol check passed with 298 of 300 replies on time, two late replies and zero malformed replies.
+
 ## Scoreboards
 
 ### Official practice
 
 | Commit / settings | Score | Squad-proxy mean / official minus proxy | Status / provenance |
 | --- | ---: | --- | --- |
+| `835d4a7`, positional field | **5.23** | — | User-reported official practice score. Retained as the baseline for the finish approach trial. |
 | `c5aeebba81a5`, default, second run | **5.23** | — | Best reported official practice score. User-reported rerun of the 5.17 shared-torso entry. |
 | `405bcde`, size-aware ground routing | 5.21 | — | User-reported official practice score. Working baseline for the positional-field trial. |
 | `b99a6135379f`, gun-only drum magazine | 5.02 | — | User-reported official practice score. |
