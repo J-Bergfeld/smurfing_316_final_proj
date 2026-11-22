@@ -6,6 +6,8 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 ## Official practice — builders-4
 
+**Positioning simplification results:** The user reported **4.95** for `e331335` (corner duel off) and **5.08** for `a8a9e91` (positional field off). Each candidate changed only that setting in the `955e6bf` submission runtime, which scored **5.47**. Runs used independent private seeds; the observed differences do not establish causality. Submission times and run IDs were not supplied.
+
 **Corner-duel follow-up:** User reports `e331335` scored **4.95** with corner duel off on the `955e6bf` baseline, versus 5.47 with it on. These runs use independent private seeds, so the observed −0.52 does not prove the causal effect. Next test keeps corner duel on and disables the positional field alone. Submission time and run ID were not supplied.
 
 **Follow-up:** User reports `c6053f8` scored **5.06**. Its submission files match `5801ebd`, which enables supply drops on the 5.47 `955e6bf` baseline. The observed difference is −0.41 on independent private seeds; it does not prove a causal loss. Keep 5.47 as the best reported result. Next candidate disables corner duel on the exact 5.47 runtime, with supply drops off. User also reports `25c82cd` scored 5.26; it uses a different source tree and enables finish priority. Run IDs and timestamps were not supplied.
@@ -13,6 +15,8 @@ Practice scores are mean placement points; local simulator results are hypothese
 | Commit | Configuration | Score |
 | --- | --- | ---: |
 | `955e6bf` | Jack aim, corridor off, early drone off | **5.47** |
+| `a8a9e91` | 5.47 baseline, positional field off | 5.08 |
+| `e331335` | 5.47 baseline, corner duel off | 4.95 |
 | `26c9ad6` | Jack aim-only package | 5.42 |
 | `835d4a7` | Positional-field baseline, rescored | 5.21 |
 | `6e0c84c` | Jack aim with partial-cover aiming | 5.20 |
