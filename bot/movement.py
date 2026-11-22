@@ -82,7 +82,7 @@ class MovementSupport:
 class Movement:
     def __init__(self, world, config, rng):
         self.world=world; self.cfg=config; self.rng=rng
-        self.nav_method=os.getenv('BOT_NAV_METHOD','legacy')
+        self.nav_method=os.getenv('BOT_NAV_METHOD','spacing')
         self.duel_hunters = frozenset()
         self.duel_until = -1.
         self.cornered_boost = os.getenv('BOT_CORNERED_BOOST') == '1'
@@ -157,13 +157,6 @@ class Movement:
         self.path = []
         return [0., 0.]
 
-    def blocks_hunter(self, hunter, point, stats):
-        pos = hunter['pos']
-        scale = 1 + hunter.get('cubes', 0) * self.cfg['cubes']['size_per_cube']
-        muzzle = (*pos[:2], pos[2] + self.cfg['mech']['muzzle_height'] * scale)
-        chest = (*point, self.world.walk_at(*point) + stats['height'] * .6)
-        return not self.world.shot_clear(muzzle, chest)
-
     def isolate_hunter(self, obs, attackers):
         """Find a short ground step with exactly one incoming firing line."""
         me, zone = obs['self'], obs['zone']
@@ -227,12 +220,10 @@ class Movement:
             self.duel_until = now + 2
         return best
 
-    def combat_move(self,obs,target,seen,squad,want_los=1,items=None,*,close_finish=False):
+    def combat_move(self,obs,target,seen,squad,want_los=1,items=None):
         if items is None: items={}
         me=obs['self']; p=me['pos']; pos=target['pos']; d=math.dist(p[:2],pos[:2]); weapons={w['kind'] for w in me['weapons'] if w}
         desired=58 if target['kind']=='npc' else (28 if 'lightning' in weapons and me['energy']>12 else (120 if 'laser' in weapons and squad else 85))
-        if close_finish:
-            desired = 20
         if 'lightning' not in weapons:
             if 'lightning' in target.get('weapons',[]): desired=max(desired,64)
             if 'mortar' in target.get('weapons',[]): desired=max(desired,80)
