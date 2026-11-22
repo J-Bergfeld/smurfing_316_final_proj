@@ -6,18 +6,34 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 ## Official practice — builders-4
 
-**Movement candidate, not yet submitted:** A combined trial adds short-horizon
-projectile steering, clearance-increasing recovery after a stalled urgent zone
-route, a bounded top-surface jump/jet fallback, and eight-direction combat
-sampling. Roof descent, positional field and corner duel remain enabled. This
-changes multiple mechanisms at once, so an official score cannot identify
-which one helped or hurt. The surface planner is local and approximate; the
-collision and projectile forecasts are sampled, not engine-exact. Focused
-scenarios and the restricted protocol replay are checks of implementation and
-runtime compliance, not evidence of placement improvement. The remaining
-runtime strategy, including the gun-only magazine priority, matches the
-reported best `955e6bf` (5.47). Record independent seed variation, submission
-time and run ID when available.
+**Sound-directed scanning — official result pending:** `f36ede6` uses the
+`955e6bf` strategy and Docker configuration, adds the smart timeout fallback,
+and changes idle scanning to look toward fresh nearby or midrange mech sounds.
+It favors cues outside the current vision cone and gives movement and reload
+sounds more weight than weapon fire. Active combat and recent damage directions
+retain priority; sound alone does not trigger a shot. It excludes predictive
+projectile dodge. Hypothesis: orient vision toward otherwise unseen mechs and
+acquire threats sooner. Risks: sounds are anonymous and noisy, cover may block
+vision, and repeated sounds may distract from other directions. The weights and
+scan duration are uncalibrated. The 166-test suite passed (15 skipped); the
+native recorded protocol replay answered 300/300 on time, max 15.1 ms on this
+host. These checks verify behavior and protocol timing, not placement. No
+submission, run ID, timestamp or score has been reported.
+
+**Predictive projectile dodge:** User reports `9078ed6` scored **5.29**, versus
+5.47 for `955e6bf` (observed −0.18). Its strategy adds only predictive projectile
+steering to the 5.47 baseline; it also includes the smart timeout fallback.
+Therefore the result does not independently measure dodge and timeout effects.
+Run ID and timestamp were not supplied. The independent-seed comparison does not
+establish causality. The timeout fallback sends the last continuous move, aim
+and boost if a decision exceeds its internal budget; it omits one-shot actions.
+
+**Combined movement trial:** User reports `37d0167` scored **5.11**, versus
+5.47 for `955e6bf` (observed −0.36). It bundled predictive projectile steering,
+clearance-based recovery, top-surface jump/jet routing, roof descent and
+lower-resolution combat sampling. The runtime strategy otherwise matches the
+5.47 baseline. The bundled changes and independent seeds prevent attribution
+to any individual mechanism. Run ID and timestamp were not supplied.
 
 **Fixed upgrade order:** User reports `7d09a1b` scored **5.35**. It keeps corner duel and the positional field enabled and removes the gun-only magazine priority. Run ID and timestamp were not supplied. Independent-seed score differences do not establish causality.
 
@@ -31,6 +47,8 @@ time and run ID when available.
 | --- | --- | ---: |
 | `955e6bf` | Jack aim, corridor off, early drone off | **5.47** |
 | `7d09a1b` | Fixed upgrade order, positional field and corner duel on | 5.35 |
+| `9078ed6` | 5.47 baseline, predictive projectile dodge and timeout fallback | 5.29 |
+| `37d0167` | 5.47 baseline, combined movement changes | 5.11 |
 | `a8a9e91` | 5.47 baseline, positional field off | 5.08 |
 | `e331335` | 5.47 baseline, corner duel off | 4.95 |
 | `26c9ad6` | Jack aim-only package | 5.42 |
