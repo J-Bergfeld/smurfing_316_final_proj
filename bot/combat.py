@@ -236,6 +236,27 @@ def aim_and_fire(me, target, config, squad=False, world=None):
             if w and w['kind']=='gun': fire[i]=fire[i] and aligned
     return {'aim':aim,'fire':fire}
 
+def favorable_fight(state, obs, track, hp):
+    """Initiate a visible, isolated fight when a rough exchange looks favorable."""
+    me = obs['self']; target = track['actor']; now = obs['t']
+    d = math.dist(me['pos'][:2], target['pos'][:2])
+    if hp <= .6 or state.retreat or not track['los'] or d >= 130:
+        return False
+    # Avoid initiating with an empty/reloading gun or an unavailable laser.
+    ready = any(w and ((w['kind'] == 'gun' and w.get('ammo', 0) > 0 and w.get('reload', 0) <= 0)
+                       or (w['kind'] == 'laser' and w.get('cooldown', 0) <= .25))
+                for w in me.get('weapons', []))
+    if not ready:
+        return False
+    for other in state.tracks.values():
+        actor = other['actor']
+        if (actor['id'] != target['id'] and actor['kind'] == 'mech'
+                and now - other['seen'] < 2.5
+                and math.dist(me['pos'][:2], actor['pos'][:2]) < 160):
+            return False
+    return Combat(state.cfg).estimate(me, target, 1) >= 1.3
+
+
 def assess_combat(state, obs, squad, late, hp):
     """Select threats and update the current retreat decision."""
     me=obs['self']; p=me['pos']; t=obs['t']
@@ -251,6 +272,7 @@ def assess_combat(state, obs, squad, late, hp):
         closing=((a['vel'][0]-me['vel'][0])*(p[0]-a['pos'][0])+(a['vel'][1]-me['vel'][1])*(p[1]-a['pos'][1]))/max(1,d)
         engage=d<60 or recent or obs['alive']<=2 or (a.get('hp',1400)<350 and d<120) or (aimed and a.get('charging') and d<120)
         if squad: engage=engage or late or (closing>3 and d<180) or (aimed and d<190) or (a.get('hp',1400)<.4*a.get('max_hp',1400) and d<160)
+        if squad and not engage and favorable_fight(state, obs, tr, hp): engage=True
         tr['engage']=engage
         if engage or t-state.hits.get(a['id'],-100)<4: danger=True
         if engage or (tr['los'] and d<150): crowd+=1
@@ -280,44 +302,6 @@ def assess_combat(state, obs, squad, late, hp):
         if state.retreat and not swamped and (hp>.8 or (t-state.last_threat>7 and hp>.55)): state.retreat=False
     return seen, target, foe, danger, finishing
 
-def sound_scan_bearing(state, obs):
-    """Hold a short-lived, anonymous nearby sound direction for idle scanning."""
-    now = obs['t']
-    if state.sound_scan is not None and now < state.sound_scan[0]:
-        return state.sound_scan[1]
-    state.sound_scan = None
-    # Movement and reload cues imply a nearby mech; weapon fire is less
-    # specific about distance or intent. These weights are experimental.
-    weights = {'step': 1.0, 'reload': .9, 'boost': .8, 'jet': .6,
-               'laser_charge': .7, 'lightning': .6, 'gun': .5,
-               'laser': .5, 'mortar': .4}
-    vision = state.cfg.get('vision', {})
-    half_fov = math.radians(vision.get('fov_deg', 120)) / 2
-    noise = math.radians(state.cfg.get('sound', {}).get('bearing_noise_deg', 7))
-    already_looking = max(0., half_fov - 2 * noise)
-    yaw = obs['self']['aim'][0]
-    candidates = []
-    for sound in obs.get('sounds', []):
-        age = sound.get('age', 0.)
-        band = sound.get('dist')
-        kind = sound.get('kind')
-        if kind not in weights or band not in ('near', 'mid') or not 0 <= age < 1.:
-            continue
-        offset = abs(angle_diff(sound['bearing'], yaw))
-        if offset < already_looking:
-            continue
-        # Favor fresh, nearby cues outside the current vision cone.
-        score = (1. if band == 'near' else .45) * weights[kind] * (1 - age)
-        if offset >= half_fov:
-            score += .2
-        candidates.append((score, sound['bearing'], age))
-    if not candidates:
-        return None
-    _, bearing, age = max(candidates)
-    state.sound_scan = (now + min(.8, 1. - age), bearing)
-    return bearing
-
-
 def apply_weapon_control(state, obs, action, target, foe, squad):
     """Choose a defensive target, aim, and update weapon triggers."""
     me=obs['self']; p=me['pos']; t=obs['t']
@@ -342,7 +326,6 @@ def apply_weapon_control(state, obs, action, target, foe, squad):
             yaw=math.atan2(nearest['pos'][1]-p[1],nearest['pos'][0]-p[0])
         elif t-state.npc_hurt<2.5 and state.npc_bearing is not None: yaw=state.npc_bearing
         elif t-state.last_hurt<2.5: yaw=state.hurt_bearing
-        elif (heard := sound_scan_bearing(state, obs)) is not None: yaw=heard
         elif any(action['move']): yaw=math.atan2(action['move'][1],action['move'][0])+1.15*math.sin(t*1.3)
         else: yaw=me['aim'][0]+.35
         action['aim']=[yaw,0]

@@ -25,7 +25,6 @@ class Controller:
         self.npc_hurt=-100.; self.npc_bearing=None; self.npc_id=None
         self.hurt_bearing=0.
         self.last_aim=[0.,0.]
-        self.sound_scan=None
         self.corner_duel = os.getenv('BOT_CORNER_DUEL') == '1'
         self.supply_drops = os.getenv('BOT_SUPPLY_DROPS', '1') == '1'
         self.slot = hello['slot']

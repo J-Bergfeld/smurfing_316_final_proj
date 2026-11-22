@@ -6,7 +6,23 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 ## Official practice — builders-4
 
-**Sound-directed scanning — official result pending:** `f36ede6` uses the
+**Favorable-fight candidate — official result pending:** On the
+`955e6bf` strategy and Docker settings with the smart timeout fallback, practice
+may initiate a fight against a currently listed mech within 130 m and clear line
+of fire when health exceeds 60%, a gun or laser is ready, there is no other
+recently tracked mech within 160 m, and the existing rough damage-exchange
+estimate is at least 1.3. Existing urgent-zone and defensive decisions retain
+priority. This is a heuristic, not the other bot's range planner; unseen enemies,
+armor, hit rates and readiness can make the estimate wrong. Sound scanning and
+predictive projectile dodge are excluded. Hypothesis: take more advantageous
+fights and convert them to kills. Risk: underestimated incoming damage or extra
+hunters cause earlier deaths. The 163-test suite passed (15 skipped), and the
+native recorded protocol replay answered 300/300 on time (14.5 ms maximum on
+this host). The linux/amd64 Docker image passed the restricted one-CPU, 512 MB,
+read-only replay 300/300 (19.7 ms maximum on this host under emulation). These
+checks do not establish official placement or live-match latency.
+
+**Sound-directed scanning — official 5.01:** `f36ede6` uses the
 `955e6bf` strategy and Docker configuration, adds the smart timeout fallback,
 and changes idle scanning to look toward fresh nearby or midrange mech sounds.
 It favors cues outside the current vision cone and gives movement and reload
@@ -17,8 +33,10 @@ acquire threats sooner. Risks: sounds are anonymous and noisy, cover may block
 vision, and repeated sounds may distract from other directions. The weights and
 scan duration are uncalibrated. The 166-test suite passed (15 skipped); the
 native recorded protocol replay answered 300/300 on time, max 15.1 ms on this
-host. These checks verify behavior and protocol timing, not placement. No
-submission, run ID, timestamp or score has been reported.
+host. These checks verify behavior and protocol timing, not placement. User
+reports **5.01** for `f36ede6`, versus 5.47 for `955e6bf` (observed −0.46).
+The timeout safeguard also differs; independent seeds prevent causal attribution.
+Run ID and timestamp were not supplied.
 
 **Predictive projectile dodge:** User reports `9078ed6` scored **5.29**, versus
 5.47 for `955e6bf` (observed −0.18). Its strategy adds only predictive projectile
@@ -49,6 +67,7 @@ to any individual mechanism. Run ID and timestamp were not supplied.
 | `7d09a1b` | Fixed upgrade order, positional field and corner duel on | 5.35 |
 | `9078ed6` | 5.47 baseline, predictive projectile dodge and timeout fallback | 5.29 |
 | `37d0167` | 5.47 baseline, combined movement changes | 5.11 |
+| `f36ede6` | 5.47 baseline, sound scanning and timeout fallback | 5.01 |
 | `a8a9e91` | 5.47 baseline, positional field off | 5.08 |
 | `e331335` | 5.47 baseline, corner duel off | 4.95 |
 | `26c9ad6` | Jack aim-only package | 5.42 |
