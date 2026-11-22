@@ -17,6 +17,14 @@ delta was −0.375 ± 0.420 SE; these small and timing-sensitive samples do not
 establish official performance. Raw data and the screened diff are in ignored
 local files `mech-testing/jack-test/paired.json` and `candidate.patch`.
 
+After merging `6d086c3`, eight new seeds 424100–424107 using its packaged
+reload-cover settings averaged 5.5 for Sam's aim and reload versus 6.375 for
+both dev policies (paired +0.875, SE 0.99; no late or invalid replies). The two
+blocks used the same seeds and bot source hash, but their outputs did not
+include layout fingerprints. The exact-revision check rejected Windows line
+endings; these results are a local screen, not an official score. Raw results:
+`mech-testing/jack-test/latest-control.json` and `latest-candidate.json`.
+
 ## Isolated wounded opponent trial
 
 Parent `835d4a7` scored **5.23** in official practice. The packaged candidate enables `BOT_FINISH_APPROACH=1`. During practice, a healthy mech with a ready weapon closes to a desired range of 20 m against a wounded, isolated opponent and defers cube collection during the approach. The hypothesis is that maintaining contact converts a retreating opponent into a placement point. The risk is taking extra damage before the next hunter arrives. Commit `67f32ba` scored **5.08**, 0.15 below its parent. Retain the positional-field baseline and disable finishing in the next trial.
