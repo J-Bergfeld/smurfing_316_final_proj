@@ -1,6 +1,7 @@
 """Extract and replay a fixed observation window against the current submission policy."""
 import argparse
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 import gzip
 import hashlib
 import json
@@ -55,6 +56,17 @@ def replay(path):
                           decision_loop_seconds=time.perf_counter()-start)))
 
 
+def run_fixtures(fixtures, timeout, jobs):
+    def run_worker(fixture):
+        result = subprocess.run([sys.executable, __file__, 'worker', str(fixture)],
+                                timeout=timeout, check=True, stdout=subprocess.PIPE, text=True)
+        return result.stdout
+
+    with ThreadPoolExecutor(max_workers=min(jobs, len(fixtures))) as workers:
+        for output in workers.map(run_worker, fixtures):
+            print(output, end='', flush=True)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command',required=True)
@@ -66,6 +78,7 @@ if __name__ == '__main__':
     run = commands.add_parser('run')
     run.add_argument('fixtures',nargs='+',type=Path)
     run.add_argument('--timeout',type=float,default=10)
+    run.add_argument('--jobs', type=int, default=1, help='Concurrent isolated replay workers')
     worker = commands.add_parser('worker')
     worker.add_argument('fixture',type=Path)
     args = parser.parse_args()
@@ -74,7 +87,8 @@ if __name__ == '__main__':
             parser.error('positive window length required')
         capture(args)
     elif args.command == 'run':
-        for fixture in args.fixtures:
-            subprocess.run([sys.executable,__file__,'worker',str(fixture)],timeout=args.timeout,check=True)
+        if args.jobs < 1 or args.timeout <= 0:
+            parser.error('jobs and timeout must be positive')
+        run_fixtures(args.fixtures, args.timeout, args.jobs)
     else:
         replay(args.fixture)

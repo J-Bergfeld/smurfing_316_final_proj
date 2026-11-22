@@ -3,7 +3,7 @@
 Run from the repository root with Python 3.9+ and cc. The checked-out simulator used here is supplied by the existing local lineup. See docs/local-simulator.md for setup. The squad panel snapshots this repository's Python submission layout, the simulator source including arena.py, map binaries, greeting/configuration, and runner. For another Python layout use the existing FFA runner and document its dependencies separately.
 
 ```sh
-SIM=competitors/updated/
+SIM="competitors/updated/$(python3 -c 'import json; print(json.load(open("competitors/lineup.json"))["simulator"])')"
 P=mech-testing/eval-baseline
 python3 tools/baseline.py --sim "$SIM" --seed-start 421100 --seeds 20 --out "$P"
 python3 tools/diagnose.py "$P" --out /tmp/baseline.json
@@ -56,6 +56,14 @@ python3 -m unittest discover -s tests -p test_scenarios.py -v
 python3 check/check.py -- python3 -u main.py
 ```
 
+For a faster action-validity check, run independent fixtures concurrently. Each worker has its own Bot instance and process timeout. Rows print in input order. In six alternating runs (worker counts 1, 2, 2, 1, 1, 2), median wall time for both fixtures fell from **1.761 s to 1.244 s** (29% reduction). Both settings processed all 110 observations and produced the same mode counts on every run. Use the default single worker when comparing timing-sensitive policy behavior or measuring latency.
+
+```sh
+for jobs in 1 2 2 1 1 2; do
+  /usr/bin/time -p python3 tools/scenario.py run --jobs "$jobs" tests/fixtures/*.json.gz
+done
+```
+
 The committed fixture files can be regenerated from these local traces. Capture requires a fresh output filename. The kit greeting provides the map/config and the runner's slot formula provides the bot seed.
 
 ```sh
@@ -72,7 +80,7 @@ python3 tools/scenario.py capture mech-testing/eval-profile/repeat-full.jsonl --
 Each spec names A and B, optionally C. Paths are relative to the spec. Use clean worktrees or the supported Python submission layout for different source builds. Each candidate executes from its own frozen snapshot. The spec supplies all BOT_ overrides. History in inputs.zip and registry.jsonl identifies each build. A failed child aborts the study and completed rows remain available for inspection. The runner refuses to reuse an output directory.
 
 ```sh
-SIM=competitors/updated/
+SIM="competitors/updated/$(python3 -c 'import json; print(json.load(open("competitors/lineup.json"))["simulator"])')"
 python3 tools/paired_panel.py --sim "$SIM" --spec experiments/squad-screen.json --seeds 3 --out mech-testing/eval-screen
 python3 tools/paired_panel.py --sim "$SIM" --spec experiments/squad-confirm.json --seeds 5 \
   --confirm mech-testing/eval-screen/report.json --out mech-testing/eval-confirm
@@ -112,8 +120,10 @@ The [machine-readable event schema](schemas/match-event-v1.json) describes versi
 ```sh
 python3 -m unittest discover -s tests -v
 python3 tools/diagnose.py mech-testing/eval-baseline --out docs/evaluation_baseline.json
-python3 tools/paired_panel.py --sim competitors/updated/ \
+python3 tools/paired_panel.py --sim "$SIM" \
   --spec experiments/squad-confirm.json --out mech-testing/eval-pipeline-check --offset 20 --seeds 1
 ```
 
 The last command runs a one-pair development smoke test of subsystem-delta output. For the real A/B/C screen and held-out smoke results, see the original study directories in mech-testing. Preserve these directories, including inputs.zip, when moving results to another machine. They are Git-ignored.
+
+The [15-seed candidate comparison](candidate_screen.md) records the advancement rule, common seed panel and results for the larger recovery and positioning screen.
