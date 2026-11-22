@@ -48,6 +48,12 @@ On recorded observations from seeds 420400 and 420404, after both optimizations 
 
 The final 16-cell crossover passed the baseline-plus-corridor suite (126 tests). The image also built for linux/amd64 and passed the restricted protocol replay with 300/300 on-time replies, maximum 28.3 ms on this host under emulation. This validates compatibility on the recorded stream, not native scorer latency or official placement. Earlier Docker checks used the host's arm64 image; the AMD64 check makes the distinction explicit.
 
+### Optional early drone trial
+
+`BOT_EARLY_DRONE=1` is an opt-in experiment and is not set in the submitted Dockerfile. In the first 60 seconds, with at least 14 mechs alive, health above 75%, no immediate danger or recently seen mech within 120 m, and a fresh drone no farther than 70 m along a directly walkable route, it increases the drone's objective value from 85 to 170. It otherwise keeps the existing objective selector and safety/zone rules. The hypothesis is to acquire two cubes and upgrades before more hunters arrive; the risks are delaying a weapon, early fight or zone rotation and taking drone damage. The factor is separate from the corridor, which can be disabled to isolate it. Scenario checks cover enabled/disabled, blocked route, a nearby threat, a stale drone and active danger. No proxy or official placement result exists.
+
+With the factor enabled, the baseline suite plus current scenarios passed (133 tests). Restricted linux/amd64 Docker protocol replays passed for both default and enabled configurations: 300/300 replies on time, maximum 28.6 ms and 28.4 ms respectively under emulation on this host. The scored image uses the Dockerfile environment, so an official early-drone trial requires an explicit candidate commit enabling the factor; a local `docker run -e` does not modify the submitted image. No claim about official performance follows from these checks.
+
 ## Laser timing trial
 
 On the `835d4a7` policy, `BOT_LASER_TIMING=reload` delays starting a laser charge in practice while the gun has ammunition, is not reloading and can reach the target. An already started charge completes; FFA behavior is unchanged. The hypothesis is that moving at full speed and keeping the shared torso on gun aim between reloads compensates for fewer laser shots. The counter-hypothesis is that losing laser damage makes fights longer. Across five old proxy traces, 382 observations had a visible or tracked mech, a loaded gun and a laser already charging; these are not official matches and do not measure missed shots.

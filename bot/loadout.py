@@ -89,7 +89,18 @@ def choose_objective(state, obs, hp, danger, squad):
             if rush_laser: value = 340
         elif kind=='cubes' and d<max(60,(150 if squad else 90)*.7): value=75 if me['cubes']<state.cfg['cubes']['stat_cap'] else 25
         elif kind=='crates' and d<(150 if squad else 90) and hp>(.5 if squad else .7) and not danger and (squad or t<150): value=45 if me['cubes']<state.cfg['cubes']['stat_cap'] else 15
-        elif kind=='npc' and d<(150 if squad else 90): value=85
+        elif kind=='npc' and d<(150 if squad else 90):
+            value=85
+            # Optional, separate practice trial: exploit the relatively quiet
+            # opening without committing to a distant or blocked drone.
+            if (os.getenv('BOT_EARLY_DRONE') == '1' and squad and t < 60
+                    and hp > .75 and obs['alive'] >= 14 and d <= 70
+                    and t-when < 1 and not danger
+                    and not any(tr['actor']['kind'] == 'mech' and t-tr['seen'] < 3
+                                and math.dist(p[:2],tr['actor']['pos'][:2]) < 120
+                                for tr in state.tracks.values())
+                    and getattr(state.world,'line_walkable',lambda *_:False)(p,item['pos'])):
+                value=170
         else: continue
         if item['pos'][2]-state.world.ground(*item['pos'][:2])>3.2: continue
         free=state.world.nearest_free(state.world.cell(*item['pos'][:2]))
