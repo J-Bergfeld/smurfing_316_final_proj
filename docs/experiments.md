@@ -10,6 +10,7 @@ Practice scores are mean placement points; local simulator results are hypothese
 | --- | ---: | --- | --- |
 | `4991fa6`, default | **5.17** | 3.81 / +1.36; approximate control, see note | Best reported official entry; earlier than tied `c5aeebb`. User confirmed commit and defaults; submission time and run ID unknown. |
 | `c5aeebb`, default | **5.17** | 3.875 / +1.295; approximate candidate, see note | Shared-torso gun aim; user-reported score ties the champion. Submission time and run ID unknown. |
+| `fb85097`, default | 5.10 | 3.33 / +1.77; approximate candidate, see note | Threat spacing with shared aim; user-reported score. Submission time and run ID unknown. |
 | `37d1a1d`, default | 5.06 | 8.50 / −3.44; approximate candidate, see note | Combat cube restraint; user-reported score. Submission time and run ID unknown. |
 | `ded4a9c`, default | 4.81 | Unknown | Squad cover and weapon readiness; user-reported score. No local placement screen, submission time or run ID recorded. |
 | `ee4f342`, default | 5.04 | 5.125 / −0.085; approximate candidate, see note | Recovery enabled by default; user reported score. Submission time and run ID unknown. |
@@ -27,6 +28,8 @@ The 5.125 proxy candidate used that same dirty tree and seeds with `BOT_SQUAD_RE
 
 The 8.50 cube-restraint estimate is the eight-match P02 split screen on seeds 420320–420327, with recovery off; the 3.875 shared-aim estimate is the 16-match historical screen on seeds 420100–420115. Both used simulator `e322ffe` and dirty experimental trees, not verified exact-commit runs of the official candidates. Their timing and small-sample caveats are recorded below and in the [historical shared-aim record](experiments-history.md#candidate-shared-torso-gun-aim).
 
+The 3.33 spacing estimate is the six-match P05 screen on seeds 420500–420505 with simulator `e322ffe`, before spacing became the default. It used a dirty experimental tree rather than a verified exact-commit run; see the [P05 record](#p05-navigation-probes-and-comparison).
+
 `4991fa6` defaults to the integrated policy with `BOT_GUN_AIM_CHECK=legacy`. Its opt-in gun-aim change was **not active** in the reported 5.17 result; do not attribute the change in score to it. Fixed practice seeds do not eliminate runtime timing noise. The 5.17 versus 4.88 score difference has no paired match-level uncertainty.
 
 ### FFA
@@ -35,7 +38,7 @@ The best FFA candidate is **undetermined**. The gun-aim candidate's local FFA sc
 
 ## Active practice candidates
 
-The initial order is recovery, farming, positioning, aiming, and navigation; trace evidence can change it. One narrow candidate from each of P01–P04 has been tested officially; P05 remains untested. Each is described and challenged in the [implementation plan](practice-improvement-plan.md).
+The initial order is recovery, farming, positioning, aiming, and navigation; trace evidence can change it. One narrow candidate from each of P01–P05 has been tested officially. Each is described and challenged in the [implementation plan](practice-improvement-plan.md).
 
 | ID | Priority / candidate | Expected mechanism | Main risk | Status |
 | --- | --- | --- | --- | --- |
@@ -43,7 +46,7 @@ The initial order is recovery, farming, positioning, aiming, and navigation; tra
 | P02 | 2. [Efficient farming](practice-improvement-plan.md#p02-efficient-farming) | Acquire damage, health, upgrades, and useful weapons early at favorable cost. | Farming delays kills and costs health or zone time. | Cube-restraint test 5.06; [record](#p02-split-screen) |
 | P03 | 3. [Anti-squad positioning](practice-improvement-plan.md#p03-anti-squad-positioning) | Limit simultaneous enemy firing angles while retaining our own opportunities to deal damage. | Cover can block our shots, permit encirclement, or delay kills. | Cover/readiness test 4.81; [record](#official-positioning-candidate) |
 | P04 | 4. [Aiming and kill conversion](practice-improvement-plan.md#p04-aiming-and-kill-conversion) | Land more shots and finish reachable threats to shorten fights. | Prediction errors or target fixation can reduce damage and increase exposure. | Shared-aim test 5.17; [record](#official-shared-aim-candidate) |
-| P05 | 5. [Navigation and zone pressure](practice-improvement-plan.md#p05-navigation-and-zone-pressure) | Reduce exposure and zone damage with better movement decisions. | Spacing can reduce damage dealt; cover or early rotation can delay kills. | Spacing selected for official test; [record](#p05-navigation-probes-and-comparison) |
+| P05 | 5. [Navigation and zone pressure](practice-improvement-plan.md#p05-navigation-and-zone-pressure) | Reduce exposure and zone damage with better movement decisions. | Spacing can reduce damage dealt; cover or early rotation can delay kills. | Spacing scored 5.10 officially; [record](#p05-navigation-probes-and-comparison) |
 
 The previous [shared-torso gun-aim experiment](experiments-history.md#candidate-shared-torso-gun-aim) was locally inconclusive. Its squad comparison had asymmetric late/invalid responses; its FFA comparison is not evidence of practice improvement. Its official test tied the best reported score, which does not establish a performance difference.
 
@@ -74,7 +77,8 @@ The previous [shared-torso gun-aim experiment](experiments-history.md#candidate-
 - Base `c5aeebb`, default shared-torso gun aim retained. Five squad-proxy traces on seeds 420400–420404 produced 9, 3, 3, 10 and 7 placement points; all ended before a win. Each showed substantial gun damage; observed multi-enemy proximity varied from about 5 to 75 seconds. One trace had 2.7 seconds outside the zone and 270 observed zone damage. Commanded movement with low measured speed varied from 0.2 to 12.3 seconds, but includes ordinary acceleration and fighting, not necessarily stalls. Last observations and end events do not always unambiguously identify the lethal source. These proxy observations motivate combat spacing and cover as well as earlier rotation; they do not establish official-engine death causes. Raw traces `mech-testing/p05-probe-{420400,420401,420402,420403,420404}.jsonl`.
 - Screened independent `BOT_NAV_METHOD` variants: `spacing` penalizes close proximity to observed enemies, especially lightning; `cover` increases the penalty for visibility to secondary enemies; `early_zone` starts rotation earlier. `legacy` is the prior behavior. Risk: spacing sacrifices firing angles, cover reduces damage or costs computation, and early rotation abandons fights. Squad proxy `e322ffe`, six pairs on 420500–420505, sequential legacy → spacing → cover → early_zone → repeated legacy. Local results select among approaches, not certify an official improvement.
 - Mean points: **3.33 / 3.33 / 2.33 / 3.00 / 2.67**; candidate-minus-first-control ± SE: spacing **0.00 ± 0.68**, cover **−1.00 ± 0.68**, early zone **−0.33 ± 0.56**; repeated control **−0.67 ± 0.42**. Versus repeated control: spacing **+0.67 ± 0.71**, cover **−0.33 ± 0.33**, early zone **+0.33 ± 0.56**. Mean kills: 1.83 / 2.17 / 1.00 / 1.50 / 1.33; late/invalid: 0/0, 0/0, 4/4, 0/0, 1/1. Sequential order, timing variation, and six seeds make all estimates uncertain. Raw result `mech-testing/p05-navigation-420500.json`; dirty bot SHA-256 `2f4c9b37abd6c890200a1250a40766a527d3ecdc2628d3e8ab03e904a3bf6bc1`, diff SHA-256 `b20201dcf013708c6533a8f7cfa6724509e57162ccaa82d70f128d50d5a618d5`; saved patch `mech-testing/p05-navigation-candidates.diff`. Those hashes identify the screened opt-in versions, before selecting the default.
-- Decision: **select spacing for the next official test**, because it directly addresses observed close-range exposure, tied the first control, led the other methods in this screen, and had no late replies. This is an exploratory choice, not a validated improvement; monitor actual official result and timing. `spacing` is the working-tree default; `BOT_NAV_METHOD=legacy` restores the prior behavior, while the alternatives remain available. No official P05 score yet. Recovery, farming and squad-cover experiments remain disabled by default; `c5aeebb` shared aim remains enabled.
+- Official `fb85097`, default spacing and shared aim: **5.10**, user-reported; submission time and run ID unknown. This is −0.07 versus the 5.17 `c5aeebb` parent, within the range of previously observed variation; the aggregate score does not establish whether spacing helped or hurt.
+- Decision: **investigate**; retain the earlier 5.17 official champion. `spacing` is the committed default; `BOT_NAV_METHOD=legacy` restores the prior behavior, while the alternatives remain available. Recovery, farming and squad-cover experiments remain disabled by default; `c5aeebb` shared aim remains enabled.
 
 ## Operating loop
 
