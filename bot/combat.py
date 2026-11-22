@@ -223,7 +223,7 @@ def aim_and_fire(me, target, config, squad=False, world=None):
                 if not gun or gun.get('reload',0)>0 or gun.get('ammo',0)==0 or dist>gun['stats']['range']*.96: aim=[yaw,pitch]
                 fire[i]=max(0.,ey(yaw)-st['turn_rate']*.05)<.04 and max(0.,ep(pitch)-st['pitch_rate']*.05)<.03
     aim[1]=max(st['min_pitch'],min(st['max_pitch'],aim[1]))
-    if gun and os.getenv('BOT_GUN_AIM_CHECK') == 'actual':
+    if gun and os.getenv('BOT_GUN_AIM_CHECK', 'actual') == 'actual':
         yaw_step=max(-st['turn_rate']*.05,min(st['turn_rate']*.05,angle_diff(aim[0],actual[0])))
         pitch_step=max(-st['pitch_rate']*.05,min(st['pitch_rate']*.05,aim[1]-actual[1]))
         aligned=abs(angle_diff(gy,actual[0]+yaw_step))<tol_y and abs(gp-actual[1]-pitch_step)<tol_p

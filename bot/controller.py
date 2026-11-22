@@ -21,7 +21,7 @@ class Controller:
         self.last_aim=[0.,0.]
         self.recovery_enabled=os.getenv('BOT_SQUAD_RECOVERY','legacy')=='cover'
         self.farming_policy=os.getenv('BOT_SQUAD_FARMING','legacy')
-        self.squad_cover=os.getenv('BOT_SQUAD_POSITION','cover')=='cover'
+        self.squad_cover=os.getenv('BOT_SQUAD_POSITION','legacy')=='cover'
         self.recovery_since=None; self.recovery_cooldown=-100.
 
     def act(self,obs):

@@ -94,6 +94,8 @@ class ControllerTests(unittest.TestCase):
             self.assertTrue(aim_and_fire(me, foe, HELLO['config'])['fire'][0])
         with patch.dict('os.environ', {'BOT_GUN_AIM_CHECK': 'actual'}):
             self.assertFalse(aim_and_fire(me, foe, HELLO['config'])['fire'][0])
+        with patch.dict('os.environ', {}, clear=True):
+            self.assertFalse(aim_and_fire(me, foe, HELLO['config'])['fire'][0])
 
     def test_movement_shares_controller_world_and_random_generator(self):
         bot = Controller(HELLO)

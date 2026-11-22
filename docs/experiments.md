@@ -40,7 +40,7 @@ The initial order is recovery, farming, positioning, aiming, and navigation; tra
 | P04 | 4. [Aiming and kill conversion](practice-improvement-plan.md#p04-aiming-and-kill-conversion) | Land more shots and finish reachable threats to shorten fights. | Prediction errors or target fixation can reduce damage and increase exposure. | Proposed |
 | P05 | 5. [Navigation and zone pressure](practice-improvement-plan.md#p05-navigation-and-zone-pressure) | Avoid stalls, unreachable objectives, and late zone entries using route-aware estimates. | Search overhead and conservative detours may outweigh rare failures. | Proposed |
 
-The previous [shared-torso gun-aim experiment](experiments-history.md#candidate-shared-torso-gun-aim) remains opt-in and inconclusive. Its squad comparison had asymmetric late/invalid responses; its FFA comparison is not evidence of practice improvement. Revisit it under P04 with the original factor identity intact.
+The previous [shared-torso gun-aim experiment](experiments-history.md#candidate-shared-torso-gun-aim) was locally inconclusive. Its squad comparison had asymmetric late/invalid responses; its FFA comparison is not evidence of practice improvement. The third planned official candidate enables that same factor by default.
 
 ### P01 first recovery screen
 
@@ -69,6 +69,10 @@ The previous [shared-torso gun-aim experiment](experiments-history.md#candidate-
 ### Pending official positioning candidate
 
 The second planned submission returns farming and recovery to `legacy` and enables `BOT_SQUAD_POSITION=cover` by default. In squad combat it seeks cover from an aimed charging laser when our beam is not hot and considers secondary-weapon readiness instead of treating any laser or lightning as ready. Hypothesis: reduce incoming fire while unable to deal effective damage. Risk: hiding can reduce our own damage or delay kills; local score unknown. The protocol replay passed with one late reply on this host. Compare its official result with the 5.17 baseline, allowing for timing noise. The preceding cube-restraint commit should be submitted separately before this one.
+
+### Pending official shared-aim candidate
+
+The third planned submission returns positioning, farming and recovery to `legacy` and enables `BOT_GUN_AIM_CHECK=actual` by default. It suppresses a gun trigger when the final shared torso command is aiming elsewhere for the laser or mortar. Hypothesis: avoid wasting ammunition; risk: a later physics tick could align, so withheld fire can reduce damage. The prior local screen is inconclusive and timing-confounded. Compare the official result with the 5.17 baseline and submit this commit separately from the two prior candidates. Protocol replay passed on this host with no late replies.
 
 1. Start from a specific trace, official result, or protocol mechanic. State the tactical alternative, affected situations, expected placement mechanism, counter-hypothesis, and where simulator behavior may not transfer.
 2. Challenge the premise in a second reasoning pass. Select a small discriminating scenario and define the decision before looking at results. Prioritize expected placement impact, frequency, transferability, cost, and uncertainty.
