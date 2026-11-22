@@ -109,6 +109,20 @@ class ControllerTests(unittest.TestCase):
         bot.items[item['id']] = ('cubes', item, obs['t'])
         self.assertEqual(bot.choose_objective(obs, 1.0, False, True)[0], item['id'])
 
+    def test_selective_farming_prefers_unblocked_cube(self):
+        bot = Controller(HELLO)
+        obs = observation()
+        bot.world = SimpleNamespace(ground=Mock(return_value=0), cell=Mock(return_value=(0, 0)),
+                                    nearest_free=Mock(return_value=(0, 0)), baked=None,
+                                    line_walkable=Mock(side_effect=lambda start, end: end[0] > 30))
+        bot.hold = (*obs['zone']['center'], obs['zone']['radius'])
+        bot.items = {5000: ('cubes', {'id': 5000, 'pos': [20, 0, 0]}, obs['t']),
+                     5001: ('cubes', {'id': 5001, 'pos': [35, 0, 0]}, obs['t'])}
+        bot.farming_policy = 'legacy'
+        self.assertEqual(bot.choose_objective(obs, 1.0, False, True)[0], 5000)
+        bot.farming_policy = 'route'
+        self.assertEqual(bot.choose_objective(obs, 1.0, False, True)[0], 5001)
+
     def test_pickup_and_unseen_attacker_memory(self):
         bot = Controller(HELLO)
         obs = observation()

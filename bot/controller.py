@@ -20,6 +20,7 @@ class Controller:
         self.hurt_bearing=0.
         self.last_aim=[0.,0.]
         self.recovery_enabled=os.getenv('BOT_SQUAD_RECOVERY','cover')=='cover'
+        self.farming_policy=os.getenv('BOT_SQUAD_FARMING','legacy')
         self.recovery_since=None; self.recovery_cooldown=-100.
 
     def act(self,obs):
@@ -64,7 +65,7 @@ class Controller:
             want_los=1 if ready else -1
             if not squad and not hot and any(a.get('charging') and abs(angle_diff(a['aim'][0],math.atan2(p[1]-a['pos'][1],p[0]-a['pos'][0])))<.3 for a in seen): want_los=-1.6
             action['move']=self.movement.combat_move(obs,foe,seen,squad,want_los,self.items); mode='fight'
-            if squad:
+            if squad and not (self.farming_policy in ('selective','cubes') and danger):
                 radius=70 if hp>.5 else 70*.57
                 cubes=[item for kind,item,_ in self.items.values() if kind=='cubes' and math.dist(p[:2],item['pos'][:2])<radius]
                 if cubes:

@@ -79,6 +79,16 @@ def choose_objective(state, obs, hp, danger, squad):
         if free is None or (state.world.baked and state.world.baked['component'][free[1]*state.world.baked['nx']+free[0]]!=state.world.baked['main']): continue
         if math.dist(item['pos'][:2],z['center'])>z['radius']-6: continue
         if t+d*1.4/me['stats']['walk_speed']+5>zone_deadline(state.hold,z,*item['pos'][:2],6): continue
-        util=value/(d+18)*(1.35 if ident==state.loot_id else 1)
+        cost=d+18
+        if squad and getattr(state,'farming_policy','legacy') in ('selective','route'):
+            if d<100 and not state.world.line_walkable(p,item['pos']): cost+=45
+            if kind=='npc':
+                cost+=min(30,max(0,t-when)*4)
+                value*=1+.3*max(0,min(1,1-item.get('hp',350)/350))
+            if kind in ('cubes','npc','crates'):
+                thresholds=state.cfg['cubes'].get('upgrade_thresholds',[1,3,6,10])
+                remaining=min((n-me['cubes'] for n in thresholds if n>me['cubes']),default=99)
+                if remaining <= (2 if kind=='npc' else 1): value*=1.25
+        util=value/cost*(1.35 if ident==state.loot_id else 1)
         if util>score: best=(ident,kind,item,d,when); score=util
     return best
