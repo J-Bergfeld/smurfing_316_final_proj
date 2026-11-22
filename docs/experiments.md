@@ -32,6 +32,18 @@ include layout fingerprints. The exact-revision check rejected Windows line
 endings; these results are a local screen, not an official score. Raw results:
 `mech-testing/jack-test/latest-control.json` and `latest-candidate.json`.
 
+An additional sequential screen with finish approach and reload cover both off
+used seeds 424200–424207: Sam control 6.25, reload only 7.25 (paired +1.00,
+SE 1.73), aim only 5.0 (paired −1.25, SE 1.49), both 5.0 (paired −1.25,
+SE 1.15). Aim only had one late response; the others had none. The simulator
+copy has no Git metadata and outputs lacked layout fingerprints; these eight
+seeds and sequential blocks do not establish an official ranking. Raw results:
+`mech-testing/jack-test/isolated-424200.json` (ignored local file).
+
+A controlled cover probe confirmed that the Sam aim can select a mech whose
+upper body is clear while its center is blocked, then point the gun at its
+blocked center. This is a geometry scenario, not evidence of its match frequency.
+
 ## Isolated wounded opponent trial
 
 Parent `835d4a7` scored **5.23** in official practice. The packaged candidate enables `BOT_FINISH_APPROACH=1`. During practice, a healthy mech with a ready weapon closes to a desired range of 20 m against a wounded, isolated opponent and defers cube collection during the approach. The hypothesis is that maintaining contact converts a retreating opponent into a placement point. The risk is taking extra damage before the next hunter arrives. Commit `67f32ba` scored **5.08**, 0.15 below its parent. Retain the positional-field baseline and disable finishing in the next trial.
