@@ -1,5 +1,6 @@
 """Local wall steering and staged recovery for the navigation controller."""
 import math
+import os
 import time
 from collections import deque
 from .geometry import distance, angle_diff
@@ -81,6 +82,7 @@ class MovementSupport:
 class Movement:
     def __init__(self, world, config, rng):
         self.world=world; self.cfg=config; self.rng=rng
+        self.nav_method=os.getenv('BOT_NAV_METHOD','spacing')
         self.path=[]; self.path_goal=None; self.path_at=-100.
         self.strafe=1; self.strafe_until=0
         self.cover=None; self.cover_at=-100.
@@ -180,8 +182,13 @@ class Movement:
                 cell=self.world.cell(x,y); clearance=self.world.baked['clearance'][cell[1]*self.world.baked['nx']+cell[0]]
                 if clearance<4: score-=(4-clearance)*2.5
             for actor in seen:
-                if actor['id']==target['id'] or math.hypot(actor['pos'][0]-x,actor['pos'][1]-y)>170: continue
-                if self.world.shot_clear((*actor['pos'][:2],actor['pos'][2]+8),(x,y,ground+me['stats']['height']*.6)): score-=30
+                enemy_distance=math.hypot(actor['pos'][0]-x,actor['pos'][1]-y)
+                if squad and self.nav_method=='spacing':
+                    safe=70 if 'lightning' in actor.get('weapons',[]) else 55
+                    score-=max(0,safe-enemy_distance)*2
+                if actor['id']==target['id'] or enemy_distance>170: continue
+                if self.world.shot_clear((*actor['pos'][:2],actor['pos'][2]+8),(x,y,ground+me['stats']['height']*.6)):
+                    score-=75 if squad and self.nav_method=='cover' else 30
             if score>best[0]: best=(score,[dx,dy])
         if blocked_side: self.strafe=-self.strafe; self.strafe_until=obs['t']+.5
         return best[1]

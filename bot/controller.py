@@ -22,6 +22,7 @@ class Controller:
         self.recovery_enabled=os.getenv('BOT_SQUAD_RECOVERY','legacy')=='cover'
         self.farming_policy=os.getenv('BOT_SQUAD_FARMING','legacy')
         self.squad_cover=os.getenv('BOT_SQUAD_POSITION','legacy')=='cover'
+        self.nav_method=os.getenv('BOT_NAV_METHOD','spacing')
         self.recovery_since=None; self.recovery_cooldown=-100.
 
     def act(self,obs):
@@ -31,7 +32,8 @@ class Controller:
         squad=not self.ffa and t>20; late=z['next_radius']<=70 or obs['alive']<=3
         seen,target,foe,danger,finishing=self.assess_combat(obs,squad,late,hp)
         goal=zone_goal(z,*p[:2]); deadline=zone_deadline(self.hold,z,*p[:2],8); need=math.dist(p[:2],goal)*1.45/me['stats']['walk_speed']+4
-        urgent=not me['in_zone'] or t+need+3>=deadline
+        zone_margin=14 if squad and self.nav_method=='early_zone' else 3
+        urgent=not me['in_zone'] or t+need+zone_margin>=deadline
         action={'tick':obs['tick'],'move':[0.,0.],'fire':[False,False],'boost':False,'jump':False}; mode='idle'
         shell=self.movement.avoid_shells(obs)
         recovery_move=None
@@ -87,7 +89,7 @@ class Controller:
             covered=self.movement.seek_cover(obs,[ghost,*seen])
             if covered is not None:
                 action['move']=covered; action['boost']=me['energy']>30 and any(covered); mode='cover'
-        elif t+need+14>=deadline and math.dist(p[:2],goal)>2:
+        elif t+need+(28 if squad and self.nav_method=='early_zone' else 14)>=deadline and math.dist(p[:2],goal)>2:
             action['move']=self.movement.navigate(me,goal,t); mode='zone'
         else:
             best=self.choose_objective(obs,hp,danger,squad)

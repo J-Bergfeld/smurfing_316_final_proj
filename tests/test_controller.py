@@ -1,5 +1,7 @@
 """Core controller behavior independent of local comparison materials."""
 import copy
+import random
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -7,10 +9,23 @@ from unittest.mock import Mock, patch
 from bot.controller import Controller
 from bot.combat import aim_and_fire
 from bot.loadout import choose_loadout
+from bot.movement import Movement
 from test_bot import HELLO, enemy, observation
 
 
 class ControllerTests(unittest.TestCase):
+    def test_spacing_moves_away_from_nearby_second_enemy(self):
+        obs=observation(); foe=enemy(80); other=enemy(-30); other['id']=8
+        world=Mock(); world.line_walkable.return_value=True; world.free_cell.return_value=True
+        world.walk_at.return_value=0; world.shot_clear.return_value=True; world.baked=None
+        moves={}
+        for method in ('legacy','spacing'):
+            movement=Movement(world,HELLO['config'],random.Random(1))
+            movement.nav_method=method; movement.action_deadline=time.perf_counter()+1
+            moves[method]=movement.combat_move(obs,foe,[foe,other],True)
+        self.assertLess(moves['legacy'][0],0)
+        self.assertGreater(moves['spacing'][0],0)
+
     def test_squad_position_seeks_cover_from_aimed_laser(self):
         with patch.dict('os.environ', {'BOT_SQUAD_POSITION':'cover', 'BOT_SQUAD_RECOVERY':'legacy'}):
             bot=Controller(HELLO)
