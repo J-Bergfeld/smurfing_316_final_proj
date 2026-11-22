@@ -2,6 +2,30 @@
 
 Practice scores are mean placement points; local simulator results are hypotheses, not official predictions. The current priority is improving practice placement to qualify. [Practice implementation plan](practice-improvement-plan.md) · [Historical experiments and calibration](experiments-history.md) · [Simulator limitations](simulator.md).
 
+## Partial-cover aiming trial
+
+On the aim-only 5.42 builders-4 configuration, `BOT_COVER_AIM=on` tries a
+predicted upper-body shot if the predicted center shot is blocked, and keeps
+the original aim if neither ray clears. The upper-body gun pitch tolerance is
+narrower; shared-torso checks still apply. Risks include approximate geometry,
+moving targets and extra ray checks.
+
+Two eight-seed sequential squad-proxy screens on 424300–424315 averaged
+5.125 with the trial versus 4.3125 without it. The first panel was 4.875 versus
+4.625; the second was 5.375 versus 4.0, with a +12 difference on one seed and
+six ties. Neither panel had late or invalid replies. The simulator checkout
+lacked Git metadata and the outputs lacked layout fingerprints. These small
+screens do not establish an official improvement. Raw local results and diff:
+`mech-testing/jack-test/cover-aim-424300.json`, `cover-aim-424308.json`, and
+`cover-aim.diff` (ignored local files).
+
+## Scorer change
+
+The organizers announced builders-4 uses 96 fresh private random seeds per
+practice run; identical code retains its first builders-4 score. Picked or
+best builders-3 entries are being rescored. Compare results within scorer
+versions and do not treat independently sampled official runs as matched seeds.
+
 ## Jack test: dev gun aim and reload on Sam
 
 Based on `67f32ba`, the integrated controller uses the `dev` constant-velocity
@@ -56,6 +80,8 @@ Ten focused behavior checks passed. The packaged protocol check passed with 298 
 
 | Commit / settings | Score | Squad-proxy mean / official minus proxy | Status / provenance |
 | --- | ---: | --- | --- |
+| `26c9ad6`, dev aim only | **5.42** | — | User-reported builders-4 score; run ID and timestamp unknown. |
+| `e9de118`, dev reload only | 4.96 | — | User-reported builders-3 score; run ID and timestamp unknown. |
 | `c776cb3`, dev aim and reload; finish approach and reload cover off | 5.15 | — | User-reported official score; run ID and timestamp unknown. |
 | `67f32ba`, finish approach | 5.08 | — | User-reported official practice score. |
 | `835d4a7`, positional field | **5.23** | — | User-reported official practice score. Retained as the baseline for the finish approach trial. |

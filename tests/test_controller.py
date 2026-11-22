@@ -1,5 +1,6 @@
 """Core controller behavior independent of local comparison materials."""
 import copy
+import math
 import random
 import time
 import unittest
@@ -233,6 +234,22 @@ class ControllerTests(unittest.TestCase):
             gun['ammo']=4; obs['t']=34; action={'move':[0,0],'fire':[False,False]}
             apply_weapon_control(bot,obs,action,None,None,True)
             self.assertTrue(action['reload'])
+
+    def test_cover_aim_uses_exposed_upper_body_only_when_needed(self):
+        obs=observation(); me=obs['self']; foe=enemy(60)
+        me['weapons'][0].update(kind='gun',ammo=12,reload=0,cooldown=0,stats=HELLO['config']['weapons']['gun'])
+        height=HELLO['config']['mech']['height']; muzzle=me['stats']['muzzle_height']
+        me['aim']=[0,math.atan2(height*.8-muzzle,60)]
+        world=Mock(); world.shot_clear.side_effect=lambda a,b:b[2]>height*.7
+        with patch.dict('os.environ', {'BOT_AIM_MODEL':'dev','BOT_COVER_AIM':'on'}):
+            action=aim_and_fire(me,foe,HELLO['config'],world=world)
+            self.assertAlmostEqual(action['aim'][1],me['aim'][1])
+            self.assertTrue(action['fire'][0])
+            world.shot_clear.side_effect=lambda a,b:False
+            self.assertFalse(aim_and_fire(me,foe,HELLO['config'],world=world)['fire'][0])
+            world.shot_clear.side_effect=lambda a,b:True
+            action=aim_and_fire(me,foe,HELLO['config'],world=world)
+            self.assertAlmostEqual(action['aim'][1],math.atan2(height*.5-muzzle,60))
 
     def test_movement_shares_controller_world_and_random_generator(self):
         bot = Controller(HELLO)
