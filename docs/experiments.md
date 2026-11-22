@@ -6,11 +6,20 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 ## Recent pressure-policy results
 
+The user reports an official practice score of **4.61** for
+`0edbbb50ccfd0308bfa1580ce75535eba7506712`, which adds bounded surface
+routing, rooftop loot selection, expanded pressure steering, and enemy-beam
+free-for-all detection. The user also reports **4.77** for `ff260a2`, the
+earlier reference-integration build. These are separate runs of different
+bundled configurations; the observed difference does not identify the effect
+of any individual change. Run IDs, timestamps, and scorer versions were not
+supplied. The reported `d39531d` practice result remains **5.56**.
+
 The user reports an official practice score of **4.19** for `9e8a264` and
 **4.27** for `58a7bb5`. Run IDs, timestamps, and scorer versions were not
 supplied. These are separate runs, so the observed difference does not isolate
-the effect of the intervening roof, exposure, and timing changes. The current
-pressure-policy benchmark is `58a7bb5`; the historical 5.47 result below used
+the effect of the intervening roof, exposure, and timing changes. The historical
+5.47 result below used
 the earlier controller and may not share the same benchmark conditions.
 
 ## Official practice — builders-4
