@@ -91,10 +91,10 @@ class Controller:
             action['move']=self.movement.navigate(me,goal,t); action['boost']=me['energy']>5; mode='zone'
         elif recovery_move is not None:
             action['move']=recovery_move; action['boost']=me['energy']>10 and any(recovery_move); mode='recover'
-        elif field_eligible and (not self.retreat or finishing or late) and (step := self.field.choose(self, obs, target)) is not None:
+        elif field_eligible and (step := self.field.choose(self, obs, target)) is not None:
             action['move'] = step
             mode = 'positional-field'
-        elif (self.corner_duel and squad and not urgent and me['grounded'] and (not self.retreat or finishing or late)
+        elif (self.corner_duel and squad and not urgent and me['grounded']
               and (duel := self.movement.isolate_hunter(obs, self.attacker_memory)) is not None):
             action['move'], target = duel
             foe = target
@@ -109,7 +109,7 @@ class Controller:
                 if lightning and me['energy']>=lightning['stats']['energy'] and distance<lightning['stats']['range']-1.5: ready=True
             want_los=1 if ready else -1
             if (not squad or self.squad_cover) and not hot and any(a.get('charging') and abs(angle_diff(a['aim'][0],math.atan2(p[1]-a['pos'][1],p[0]-a['pos'][0])))<.3 for a in seen): want_los=-1.6
-            action['move']=self.movement.combat_move(obs,foe,seen,squad,want_los,self.items,aggressive=True); mode='fight'
+            action['move']=self.movement.combat_move(obs,foe,seen,squad,want_los,self.items); mode='fight'
             if squad and not (self.farming_policy in ('selective','cubes') and danger):
                 radius=70 if hp>.5 else 70*.57
                 cubes=[item for kind,item,_ in self.items.values() if kind=='cubes' and math.dist(p[:2],item['pos'][:2])<radius]

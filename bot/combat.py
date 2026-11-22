@@ -250,15 +250,15 @@ def assess_combat(state, obs, squad, late, hp):
         recent=t-state.hits.get(a['id'],-100)<(6 if squad else 4)
         closing=((a['vel'][0]-me['vel'][0])*(p[0]-a['pos'][0])+(a['vel'][1]-me['vel'][1])*(p[1]-a['pos'][1]))/max(1,d)
         engage=d<60 or recent or obs['alive']<=2 or (a.get('hp',1400)<350 and d<120) or (aimed and a.get('charging') and d<120)
-        if squad: engage=engage or late or (closing>3 and d<180) or (aimed and d<190) or (a.get('hp',1400)<.4*a.get('max_hp',1400) and d<190)
+        if squad: engage=engage or late or (closing>3 and d<180) or (aimed and d<190) or (a.get('hp',1400)<.4*a.get('max_hp',1400) and d<170)
         tr['engage']=engage
         if engage or t-state.hits.get(a['id'],-100)<4: danger=True
         if engage or (tr['los'] and d<150): crowd+=1
         if engage and not tr['los'] and d<(240 if squad else 215): hidden.append((d,a['id'],a))
         if not engage or not tr['los'] or d>(240 if squad else 215): continue
         cost=d+(.18 if squad else 60/1400)*a.get('hp',1400)
-        if squad and a['id']==state.target_id and t-state.target_at<2: cost-=90
-        if squad and a.get('hp',1400)<=.3*a.get('max_hp',1400): cost-=250
+        if squad and a['id']==state.target_id and t-state.target_at<2: cost-=200
+        if squad and a.get('hp',1400)<=.3*a.get('max_hp',1400): cost-=200
         if recent: cost-=40
         if closing>3: cost-=15
         choices.append((cost,a['id'],a))
@@ -268,11 +268,11 @@ def assess_combat(state, obs, squad, late, hp):
     if danger or t-state.last_hurt<3: state.last_threat=t
     finishing=bool(target and math.dist(p[:2],target['pos'][:2])<120 and (target['hp']<200 or target['hp']<me['hp']*.5))
     near=sum(tr['seen']==t and math.dist(p[:2],tr['actor']['pos'][:2])<160 for tr in state.tracks.values() if tr['actor']['kind']=='mech')
-    losing=(near>=2 and hp<.65) or (near>=3 and hp<.9)
-    if target and hp<.45 and target['hp']/max(1,target['max_hp'])>hp+.1: losing=True
+    losing=(near>=2 and hp<.55) or (near>=3 and hp<.8)
+    if target and hp<.35 and target['hp']/max(1,target['max_hp'])>hp+.1: losing=True
     if target and target['hp']/max(1,target['max_hp'])<.25 and hp>.2 and near<=2: losing=False
     if losing: state.lose_at=t
-    if squad: state.retreat=t-state.lose_at<3 and state.lose_at>=0
+    if squad: state.retreat=t-state.lose_at<1.5 and state.lose_at>0
     else:
         outgunned=bool(target and 'laser' in target.get('weapons',[]) and not any(w and w['kind']=='laser' for w in me['weapons']) and math.dist(p[:2],target['pos'][:2])>55 and hp<.8)
         swamped=crowd>=3 or (crowd==2 and hp<.65) or outgunned
