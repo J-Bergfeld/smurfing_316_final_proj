@@ -14,6 +14,17 @@ from test_bot import HELLO, enemy, observation
 
 
 class ControllerTests(unittest.TestCase):
+    def test_magazine_priority_depends_on_equipped_weapons(self):
+        obs = observation()
+        obs['offer'] = {'choices': [{'id': kind} for kind in ('gun_rate', 'gun_mag', 'gun_damage')]}
+        for secondary, expected in [(None, 1), ({'kind': 'laser'}, 2)]:
+            with self.subTest(secondary=secondary):
+                obs['self']['weapons'] = [{'kind': 'gun'}, secondary]
+                self.assertEqual(choose_loadout(obs, HELLO['config'])['pick'], expected)
+        obs['self']['weapons'][1] = None
+        obs['offer']['choices'][0] = {'id': 'plating'}
+        self.assertEqual(choose_loadout(obs, HELLO['config'])['pick'], 0)
+
     def test_small_circle_uses_selective_combat_until_final_three(self):
         with patch.dict('os.environ', {'BOT_LATE_HIDE': '1'}):
             bot = Controller(HELLO)

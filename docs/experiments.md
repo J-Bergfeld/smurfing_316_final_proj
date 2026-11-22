@@ -9,6 +9,7 @@ Practice scores are mean placement points; local simulator results are hypothese
 | Commit / settings | Score | Squad-proxy mean / official minus proxy | Status / provenance |
 | --- | ---: | --- | --- |
 | `c5aeebba81a5`, default, second run | **5.23** | — | Best reported official practice score. User-reported rerun of the 5.17 shared-torso entry. |
+| `10fb916`, corner duel with shared-torso aim | 5.21 | — | User-reported official practice score. |
 | `4d02e84`, supply drops and late-circle play with shared-torso gun aim | 5.13 | — | User-reported official practice score for the combined version. |
 | `c68975862d2b`, supply drops and late-circle play with legacy gun aim | 5.17 | 5.56 on the 16-seed validation panel | User-reported official practice score. |
 | `47291ba`, packaged cornered boost, cover recovery and spacing | 4.88 | Unknown | User-reported official trial. Scored 0.02 below the `26db76c` cornered-dodge trial and 0.29 below the then-best 5.17. |
@@ -59,11 +60,15 @@ Commit `4d02e84` combined these supply-drop and late-circle tactics with the sha
 
 All panels used simulator `e322ffe`. Local raw evidence is in `mech-testing/tactics-screen-422715/`, `mech-testing/tactics-image-panel/` and `mech-testing/tactics-validation-422890/` (the later comparison is under `drops/`).
 
+## Gun-only drum magazine trial
+
+This candidate uses the 5.23 shared-torso settings with corner duels, supply-drop pursuit and late-circle hiding disabled. When the gun is the only equipped weapon, drum magazine takes priority over gun damage and fire rate. Plating, armor and nanites retain priority over the magazine. Equipping a secondary restores the original upgrade order. Official score pending.
+
 ## Corner duel practice trial
 
 The packaged candidate uses the settings of the 5.23 shared-torso entry (`c5aeebba81a5`) and enables `BOT_CORNER_DUEL=1`. Supply-drop pursuit and late-circle hiding are disabled for this comparison. During inferred squad play, two mechs with open firing lines must be aiming toward us or have damaged us within three seconds. The controller checks reachable ground positions 6 or 12 m away for a shot on a single exposed hunter, favors lower HP, and skips cube detours during the maneuver. Open ground falls back to the existing policy. An urgent zone takes priority.
 
-Three scripted controller checks passed. The packaged image answered 300 of 300 protocol observations within 50 ms. Official score pending.
+Three scripted controller checks passed. The packaged image answered 300 of 300 protocol observations within 50 ms. Commit `10fb916` scored **5.21** in official practice, between the baseline’s two reported runs of 5.17 and 5.23. The effect of the corner tactic remains inconclusive.
 
 ## Active practice candidates
 
