@@ -59,17 +59,31 @@ def choose_objective(state, obs, hp, danger, squad):
     candidates=list(state.items.items())
     if hp>(.5 if squad else .7) and not danger and (squad or t<150) and me['cubes']<state.cfg['cubes']['stat_cap']:
         candidates += [(ident,('npc',tr['actor'],tr['seen'])) for ident,tr in state.tracks.items() if tr['actor']['kind']=='npc' and t-tr['seen']<12]
+    if squad and not danger:
+        candidates.extend((drop['id'], ('drops', drop, t)) for drop in obs.get('drops', []))
     for ident,(kind,item,when) in candidates:
         d=math.dist(p[:2],item['pos'][:2])
         if d>260 or ident in state.bad and state.bad[ident]>t: continue
-        if kind=='pickups':
+        if kind == 'drops':
+            travel = max(0., d - item['radius'] * .65) * 1.4 / me['stats']['walk_speed']
+            wait = max(0., item['lands_in'] - travel)
+            if item['holder'] not in (None, state.slot) or wait > 8:
+                continue
+            finish = t + travel + wait + item['capture_s'] - item['progress']
+            if finish >= zone_deadline(state.hold, z, *item['pos'][:2], 6):
+                continue
+            value = 240 + 240 * (1 - hp)
+        elif kind=='pickups':
             if item['kind'] in held or item['kind'] in ('gun','mortar'): continue
             current=me['weapons'][1] if len(me['weapons'])>1 else None
             ranking={'laser':4,'lightning':3,'mortar':1}
             if current and ranking.get(item['kind'],0)<=ranking.get(current['kind'],0): continue
             limit=240 if squad and item['kind']=='laser' else 150 if squad else 90
+            rush_laser = state.laser_rush and item['kind'] == 'laser' and not state.ffa and not danger and not state.retreat
+            if rush_laser: limit = 250
             if d>=limit: continue
             value=150 if item['kind']=='laser' and squad else 130 if None in me['weapons'] else 60
+            if rush_laser: value = 340
         elif kind=='cubes' and d<max(60,(150 if squad else 90)*.7): value=75 if me['cubes']<state.cfg['cubes']['stat_cap'] else 25
         elif kind=='crates' and d<(150 if squad else 90) and hp>(.5 if squad else .7) and not danger and (squad or t<150): value=45 if me['cubes']<state.cfg['cubes']['stat_cap'] else 15
         elif kind=='npc' and d<(150 if squad else 90): value=85

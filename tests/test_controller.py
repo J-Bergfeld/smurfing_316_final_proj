@@ -14,6 +14,64 @@ from test_bot import HELLO, enemy, observation
 
 
 class ControllerTests(unittest.TestCase):
+    def test_small_circle_uses_selective_combat_until_final_three(self):
+        with patch.dict('os.environ', {'BOT_LATE_HIDE': '1'}):
+            bot = Controller(HELLO)
+        obs = observation()
+        obs.update(t=180, tick=1800)
+        obs['zone']['next_radius'] = 140
+        bot.assess_combat = Mock(return_value=([], None, None, False, False))
+        bot.act(obs)
+        self.assertEqual(bot.assess_combat.call_args.args[1:3], (False, False))
+        self.assertFalse(bot.ffa)
+        obs['alive'] = 3
+        bot.act(obs)
+        self.assertEqual(bot.assess_combat.call_args.args[1:3], (True, True))
+
+    def test_opening_laser_run_reserves_energy_and_yields_in_ffa(self):
+        with patch.dict('os.environ', {'BOT_LASER_RUSH': '1'}):
+            bot = Controller(HELLO)
+        obs = observation()
+        obs['pickups'] = [{'id': 8000, 'kind': 'laser', 'pos': [115, 0, 0]}]
+        bot.world = Mock(baked=None)
+        bot.world.ground.return_value = 0
+        bot.movement = Mock(unstuck_until=0)
+        bot.movement.avoid_shells.return_value = None
+        bot.movement.navigate.return_value = [1, 0]
+        obs['self']['weapons'][1] = None
+        action = bot.act(obs)
+        self.assertEqual(bot.loot_id, 8000)
+        self.assertTrue(action['boost'])
+        self.assertGreater(action['aim'][0], 1)
+        obs['self']['energy'] = 55
+        self.assertFalse(bot.act(obs)['boost'])
+        bot.ffa = True
+        self.assertIsNone(bot.choose_objective(obs, 1., False, False))
+
+    def test_supply_drop_approach_hold_and_yield(self):
+        bot = Controller(HELLO)
+        obs = observation()
+        obs.update(t=100, tick=1000)
+        drop = dict(id=20000, pos=[30, 0, 0], radius=8, lands_in=0,
+                    capture_s=4, progress=0, holder=None)
+        obs['drops'] = [drop]
+        bot.world = Mock(baked=None)
+        bot.world.ground.return_value = 0
+        bot.movement = Mock(unstuck_until=0)
+        bot.movement.avoid_shells.return_value = None
+        bot.movement.navigate.return_value = [1, 0]
+        self.assertEqual(bot.act(obs)['move'], [1, 0])
+        self.assertEqual(bot.mode, 'capture')
+        obs['self']['pos'] = [27, 0, 0]
+        drop.update(holder=bot.slot, progress=2)
+        self.assertEqual(bot.act(obs)['move'], [0, 0])
+        self.assertEqual(bot.mode, 'capture')
+        self.assertIsNone(bot.choose_objective(obs, .5, True, True))
+        drop['holder'] = (bot.slot + 1) % 16
+        self.assertIsNone(bot.choose_objective(obs, .5, False, True))
+        drop.update(holder=None, progress=0, lands_in=25)
+        self.assertIsNone(bot.choose_objective(obs, .5, False, True))
+
     def test_cornered_projectile_boost_respects_energy_and_ground_contact(self):
         obs = observation()
         obs['projectiles'] = [{'kind':'gun', 'pos':[-20, 0, 5], 'vel':[200, 0, 0]}]

@@ -7,3 +7,4 @@ competitors
 __pycache__
 *.pyc
 mech-testing
+local-references

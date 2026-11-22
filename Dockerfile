@@ -3,7 +3,7 @@ WORKDIR /bot
 COPY main.py mechfight.py ./
 COPY bot ./bot
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    BOT_CORNERED_BOOST=1 \
-    BOT_SQUAD_RECOVERY=cover \
-    BOT_NAV_METHOD=spacing
+    BOT_NAV_METHOD=legacy \
+    BOT_GUN_AIM_CHECK=legacy \
+    BOT_LATE_HIDE=1
 ENTRYPOINT ["python3", "-u", "/bot/main.py"]

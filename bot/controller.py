@@ -19,6 +19,9 @@ class Controller:
         self.npc_hurt=-100.; self.npc_bearing=None; self.npc_id=None
         self.hurt_bearing=0.
         self.last_aim=[0.,0.]
+        self.slot = hello['slot']
+        self.laser_rush = os.getenv('BOT_LASER_RUSH') == '1'
+        self.late_hide = os.getenv('BOT_LATE_HIDE') == '1'
         self.recovery_enabled=os.getenv('BOT_SQUAD_RECOVERY','legacy')=='cover'
         self.farming_policy=os.getenv('BOT_SQUAD_FARMING','legacy')
         self.squad_cover=os.getenv('BOT_SQUAD_POSITION','legacy')=='cover'
@@ -29,7 +32,10 @@ class Controller:
         self.action_deadline=time.perf_counter()+.027
         self.movement.action_deadline=self.action_deadline
         self.update_world(obs); me=obs['self']; p=me['pos']; t=obs['t']; z=obs['zone']; hp=me['hp']/max(1,me['max_hp'])
-        squad=not self.ffa and t>20; late=z['next_radius']<=70 or obs['alive']<=3
+        practice = not self.ffa and t > 20
+        hide = practice and self.late_hide and z['next_radius'] <= 140 and obs['alive'] > 3
+        squad = practice and not hide
+        late = (z['next_radius'] <= 70 and not hide) or obs['alive'] <= 3
         seen,target,foe,danger,finishing=self.assess_combat(obs,squad,late,hp)
         goal=zone_goal(z,*p[:2]); deadline=zone_deadline(self.hold,z,*p[:2],8); need=math.dist(p[:2],goal)*1.45/me['stats']['walk_speed']+4
         zone_margin=14 if squad and self.nav_method=='early_zone' else 3
@@ -98,10 +104,17 @@ class Controller:
                 ident,kind,item,d,when=best
                 if ident!=self.loot_id: self.loot_id=ident; self.loot_since=t
                 elif t-self.loot_since>30: self.bad[ident]=t+60; self.loot_id=None
-                if kind=='npc' and t-when<1 and self.tracks[ident]['los'] and d<75:
+                if kind == 'drops':
+                    mode = 'capture'
+                    if d > item['radius'] * .65:
+                        action['move'] = self.movement.navigate(me, item['pos'], t)
+                elif kind=='npc' and t-when<1 and self.tracks[ident]['los'] and d<75:
                     target=item; action['move']=self.movement.combat_move(obs,item,seen,squad,1,self.items)
                 elif kind=='crates' and d<50: target=dict(item,kind='crate',vel=[0,0,0])
-                else: action['move']=self.movement.navigate(me,item['pos'],t)
+                else:
+                    action['move'] = self.movement.navigate(me, item['pos'], t)
+                    if self.laser_rush and kind == 'pickups' and item['kind'] == 'laser' and not self.ffa:
+                        action['boost'] = not danger and d > 12 and me['energy'] > 60
             else:
                 self.loot_id=None
             if not best and math.dist(p[:2],goal)>3 and (squad or z['next_radius']<=30):
@@ -113,6 +126,11 @@ class Controller:
                     action['move']=[v*factor for v in action['move']]
         self.movement.apply_evasion_and_recovery(obs,action,mode)
         apply_weapon_control(self,obs,action,target,foe,squad)
+        if (self.laser_rush and not self.ffa and mode in ('idle', 'loot', 'home') and target is None
+                and t - self.last_threat > 3 and t - self.npc_hurt > 3
+                and not any(w and w['kind'] == 'laser' for w in me['weapons'])
+                and t % 8 < 2.5):
+            action['aim'] = [angle_diff(me['aim'][0] + 1.3, 0), 0.]
         if mode=='recover': action['fire']=[False,False]
         action.update(choose_loadout(obs,self.cfg))
         self.mode=mode

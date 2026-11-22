@@ -38,6 +38,22 @@ The 3.33 spacing estimate is the six-match P05 screen on seeds 420500–420505 w
 
 The best FFA candidate is **undetermined**. The gun-aim candidate's local FFA screen is recorded in the [historical FFA table](experiments-history.md#local-ffa-performance); a single lineup and 16 pairs do not establish a champion. FFA remains separate from the practice scoreboard and is deferred while qualification practice is the priority.
 
+## Supply drops and late-circle practice play
+
+The packaged candidate uses the gun aim and movement settings from the earlier 5.17 entry (`4991fa6`). When squad play is active and there is no immediate danger, the bot values reachable supply drops more highly as its health falls. It estimates travel, landing and capture time against the zone deadline and holds inside the ring. When the next radius reaches 140 m with more than three mechs alive, it switches to selective engagement. At three remaining it resumes squad combat. The Dockerfile enables this with `BOT_LATE_HIDE=1`, `BOT_NAV_METHOD=legacy` and `BOT_GUN_AIM_CHECK=legacy`.
+
+| Squad-proxy panel | Official 5.17 build | Drops only | Drops and late-circle play | Also rush laser |
+| --- | ---: | ---: | ---: | ---: |
+| 12 native pairs, 422715–422726 | 3.42 | 4.08 | 4.17 | — |
+| 10 restricted-container matches per build, 423815–423824 | 5.50 | — | 6.20 | 7.50 |
+| 16 native matches per build, 422890–422905 | 5.19 | — | 5.56 | 4.63 |
+
+The final 16 seeds were fresh for the champion and laser variant. The simpler candidate ran afterward in a separate block on those same starts. Its mean paired gain was +0.38 with a 95% seed-bootstrap interval of [-0.69, 1.62]. On that panel the simpler candidate recorded zero captures and zero late or invalid replies. It captured two drops in the 12-seed screen. The three panels support an official trial of the combined policy. Individual gains cannot be attributed to captures alone.
+
+The optional `BOT_LASER_RUSH=1` variant scans for lasers when calm, prioritizes reachable lasers and boosts toward them above 60 energy. It acquired a laser within 30 seconds in 9 of 16 validation matches versus 4 of 16 for the champion, but lost 0.56 placement points per match on that panel. It stays off in the packaged candidate. The official best remains 5.17 until a new official result is available.
+
+All panels used simulator `e322ffe`. Local raw evidence is in `mech-testing/tactics-screen-422715/`, `mech-testing/tactics-image-panel/` and `mech-testing/tactics-validation-422890/` (the later comparison is under `drops/`).
+
 ## Active practice candidates
 
 The initial order is recovery, farming, positioning, aiming, and navigation; trace evidence can change it. One narrow candidate from each of P01–P05 has been tested officially. Each is described and challenged in the [implementation plan](practice-improvement-plan.md).
