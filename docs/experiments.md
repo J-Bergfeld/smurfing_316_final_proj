@@ -59,6 +59,12 @@ Commit `4d02e84` combined these supply-drop and late-circle tactics with the sha
 
 All panels used simulator `e322ffe`. Local raw evidence is in `mech-testing/tactics-screen-422715/`, `mech-testing/tactics-image-panel/` and `mech-testing/tactics-validation-422890/` (the later comparison is under `drops/`).
 
+## Corner duel practice trial
+
+The packaged candidate uses the settings of the 5.23 shared-torso entry (`c5aeebba81a5`) and enables `BOT_CORNER_DUEL=1`. Supply-drop pursuit and late-circle hiding are disabled for this comparison. During inferred squad play, two mechs with open firing lines must be aiming toward us or have damaged us within three seconds. The controller checks reachable ground positions 6 or 12 m away for a shot on a single exposed hunter, favors lower HP, and skips cube detours during the maneuver. Open ground falls back to the existing policy. An urgent zone takes priority.
+
+Three scripted controller checks passed. The packaged image answered 300 of 300 protocol observations within 50 ms. Official score pending.
+
 ## Active practice candidates
 
 The initial order is recovery, farming, positioning, aiming, and navigation; trace evidence can change it. One narrow candidate from each of P01–P05 has been tested officially. Each is described and challenged in the [implementation plan](practice-improvement-plan.md).

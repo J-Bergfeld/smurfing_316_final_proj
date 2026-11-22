@@ -83,6 +83,8 @@ class Movement:
     def __init__(self, world, config, rng):
         self.world=world; self.cfg=config; self.rng=rng
         self.nav_method=os.getenv('BOT_NAV_METHOD','spacing')
+        self.duel_hunters = frozenset()
+        self.duel_until = -1.
         self.cornered_boost = os.getenv('BOT_CORNERED_BOOST') == '1'
         self.path=[]; self.path_goal=None; self.path_at=-100.
         self.strafe=1; self.strafe_until=0
@@ -143,6 +145,69 @@ class Movement:
             point=self.world.cell_pos(cell)
             if self.world.line_walkable(p,point): return unit(point)
         return unit(self.world.cell_pos(self.path[min(1,len(self.path)-1)]))
+
+    def isolate_hunter(self, obs, attackers):
+        """Find a short ground step with exactly one incoming firing line."""
+        me, zone = obs['self'], obs['zone']
+        p, now = me['pos'], obs['t']
+        hunters = []
+        for actor in obs['mechs']:
+            if actor['kind'] != 'mech':
+                continue
+            pos = actor['pos']
+            reach = max((self.cfg['weapons'][w].get('range', 200) for w in actor['weapons']), default=0)
+            if math.dist(p[:2], pos[:2]) > reach:
+                continue
+            bearing = math.atan2(p[1] - pos[1], p[0] - pos[0])
+            aimed = abs(angle_diff(bearing, actor['aim'][0])) < .22
+            if not aimed and now - attackers.get(actor['id'], -100) > 3:
+                continue
+            scale = 1 + actor.get('cubes', 0) * self.cfg['cubes']['size_per_cube']
+            muzzle = (*pos[:2], pos[2] + self.cfg['mech']['muzzle_height'] * scale)
+            center = (*pos[:2], pos[2] + self.cfg['mech']['height'] * scale * .5)
+            hunters.append((actor, muzzle, center))
+        if len(hunters) < 2:
+            return None
+
+        def exposed(x, y, ground):
+            chest = (x, y, ground + me['stats']['height'] * .6)
+            return [h for h in hunters if self.world.shot_clear(h[1], chest)]
+
+        ids = frozenset(h[0]['id'] for h in hunters)
+        current = exposed(*p)
+        if len(current) < 2 and (ids != self.duel_hunters or now > self.duel_until):
+            return None
+        own_range = max((w['stats'].get('range', 200) for w in me['weapons'] if w), default=0)
+        best, best_cost = None, math.inf
+        deadline = min(self.action_deadline, time.perf_counter() + .005)
+        for i in range(-1, 32):
+            if time.perf_counter() >= deadline:
+                break
+            radius = 0 if i < 0 else 6 * (1 + i // 16)
+            angle = (i % 16) * math.pi / 8
+            dx, dy = math.cos(angle), math.sin(angle)
+            x, y = p[0] + radius * dx, p[1] + radius * dy
+            if math.dist((x, y), zone['center']) > zone['radius'] - 5:
+                continue
+            if radius and not (self.world.free_cell(self.world.cell(x, y)) and self.world.line_walkable(p, (x, y))):
+                continue
+            ground = self.world.walk_at(x, y) if radius else p[2]
+            lines = exposed(x, y, ground) if radius else current
+            if len(lines) != 1:
+                continue
+            actor, _, center = lines[0]
+            if math.dist((x, y), center[:2]) > own_range * .96:
+                continue
+            if not self.world.shot_clear((x, y, ground + me['stats']['muzzle_height']), center):
+                continue
+            cost = actor['hp'] * .18 + math.dist((x, y), center[:2]) + radius * 3
+            if cost < best_cost:
+                best_cost = cost
+                best = ([dx, dy] if radius else [0., 0.], actor)
+        if best is not None and len(current) >= 2:
+            self.duel_hunters = ids
+            self.duel_until = now + 2
+        return best
 
     def combat_move(self,obs,target,seen,squad,want_los=1,items=None):
         if items is None: items={}

@@ -19,6 +19,8 @@ class Controller:
         self.npc_hurt=-100.; self.npc_bearing=None; self.npc_id=None
         self.hurt_bearing=0.
         self.last_aim=[0.,0.]
+        self.corner_duel = os.getenv('BOT_CORNER_DUEL') == '1'
+        self.supply_drops = os.getenv('BOT_SUPPLY_DROPS', '1') == '1'
         self.slot = hello['slot']
         self.laser_rush = os.getenv('BOT_LASER_RUSH') == '1'
         self.late_hide = os.getenv('BOT_LATE_HIDE') == '1'
@@ -66,6 +68,11 @@ class Controller:
             action['move']=self.movement.navigate(me,goal,t); action['boost']=me['energy']>5; mode='zone'
         elif recovery_move is not None:
             action['move']=recovery_move; action['boost']=me['energy']>10 and any(recovery_move); mode='recover'
+        elif (self.corner_duel and squad and not urgent and me['grounded']
+              and (duel := self.movement.isolate_hunter(obs, self.attacker_memory)) is not None):
+            action['move'], target = duel
+            foe = target
+            mode = 'corner-duel'
         elif foe and not (self.retreat and not finishing and not late):
             distance=math.dist(p[:2],foe['pos'][:2]); gun=next((w for w in me['weapons'] if w and w['kind']=='gun'),None); laser_weapon=next((w for w in me['weapons'] if w and w['kind']=='laser'),None)
             ready=bool(gun and gun['ammo']>0 and gun['reload']<=.25 and distance<=gun['stats']['range']-10)

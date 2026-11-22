@@ -59,7 +59,7 @@ def choose_objective(state, obs, hp, danger, squad):
     candidates=list(state.items.items())
     if hp>(.5 if squad else .7) and not danger and (squad or t<150) and me['cubes']<state.cfg['cubes']['stat_cap']:
         candidates += [(ident,('npc',tr['actor'],tr['seen'])) for ident,tr in state.tracks.items() if tr['actor']['kind']=='npc' and t-tr['seen']<12]
-    if squad and not danger:
+    if squad and state.supply_drops and not danger:
         candidates.extend((drop['id'], ('drops', drop, t)) for drop in obs.get('drops', []))
     for ident,(kind,item,when) in candidates:
         d=math.dist(p[:2],item['pos'][:2])
