@@ -10,6 +10,7 @@ from .loadout import choose_loadout, choose_objective
 from .movement import Movement
 from .positional_field import PositionalField
 from .corridor import FightCorridor
+from .tactical_planner import TacticalPlanner
 from .world import update_perception
 class Controller:
     def __init__(self,hello):
@@ -22,6 +23,7 @@ class Controller:
         self.movement=Movement(self.world,self.cfg,self.rng)
         self.field = PositionalField(self.world) if os.getenv('BOT_POSITIONAL_FIELD') == '1' else None
         self.corridor = FightCorridor(self.field) if self.field and os.getenv('BOT_FIGHT_CORRIDOR') == '1' else None
+        self.tactical = TacticalPlanner(self.world) if os.getenv('BOT_TACTICAL_PLANNER') == '1' else None
         self.npc_hurt=-100.; self.npc_bearing=None; self.npc_id=None
         self.hurt_bearing=0.
         self.last_aim=[0.,0.]
@@ -91,6 +93,9 @@ class Controller:
             action['move']=self.movement.navigate(me,goal,t); action['boost']=me['energy']>5; mode='zone'
         elif recovery_move is not None:
             action['move']=recovery_move; action['boost']=me['energy']>10 and any(recovery_move); mode='recover'
+        elif (self.tactical is not None and me['grounded'] and target is not None
+              and (step := self.tactical.choose(self, obs, target)) is not None):
+            action['move'] = step; mode = 'tactical'
         elif field_eligible and (step := self.field.choose(self, obs, target)) is not None:
             action['move'] = step
             mode = 'positional-field'
