@@ -62,8 +62,12 @@ The repository root contains a Python submission image. `main.py` runs the bot,
 and `bot/controller.py` coordinates its turn decisions. The active policy uses
 `bot/world.py` for perception, `bot/geometry.py` for map queries,
 `bot/movement.py` for navigation and evasion, `bot/combat.py` for target and
-weapon control, and `bot/loadout.py` for objectives and upgrades. The controller
-adapts to practice and free-for-all matches.
+weapon control, and `bot/loadout.py` for objectives and upgrades. The submission
+image enables `BOT_DECISION_POLICY=pressure`, an experimental practice-field
+controller informed by the local reference study. Set `BOT_DECISION_POLICY=classic`
+to select the previous integrated controller; direct Python runs default to
+classic. The ignored local study directory contains replay and paired local results,
+including the experimental policy's observed regression.
 Set `BOT_POLICY=legacy` to run the earlier modular policy; its
 `BOT_PROFILE=practice` and `BOT_PROFILE=final` settings remain available.
 The experimental `BOT_STRAFE`, `BOT_HUNTERS`, `BOT_ECONOMY`,
@@ -112,7 +116,7 @@ limit on the submission platform. The leaderboard ranks the best practice result
 
 ## Evaluation
 
-The default policy scored **3.90 local placement points** on 20 fresh squad-proxy matches. The simulator recorded 13 gun, five laser, one lightning and one zone elimination. The [baseline report](docs/evaluation_baseline.md) links the underlying terminal windows. The [audit](docs/evaluation_audit.md) measures runtime and the [evaluation commands](docs/evaluation_methodology.md) reproduce the baseline, replay focused scenarios, compare frozen candidates on paired seeds, and record manual official results.
+An earlier integrated policy scored **3.90 local placement points** on 20 fresh squad-proxy matches. The simulator recorded 13 gun, five laser, one lightning and one zone elimination. The [baseline report](docs/evaluation_baseline.md) links the underlying terminal windows. This result does not measure the current experimental submission policy. The [audit](docs/evaluation_audit.md) measures runtime and the [evaluation commands](docs/evaluation_methodology.md) reproduce the baseline, replay focused scenarios, compare frozen candidates on paired seeds, and record manual official results.
 
 The [official feedback report](docs/m5_official_feedback.md) covers slot tracking and calibration against five historical entries. The [cornered-dodge trial](docs/m6_cornered_boost.md) records the opt-in gameplay change and its paired evaluation.
 

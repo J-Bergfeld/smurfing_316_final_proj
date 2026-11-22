@@ -49,6 +49,15 @@ class FavorableFightTests(unittest.TestCase):
         self.bot.tracks[8]['seen'] = 7
         self.assertTrue(favorable_fight(self.bot, self.obs, self.track, 1.))
 
+    def test_pressure_profile_accepts_marginal_exchange_but_respects_health(self):
+        self.bot.pressure_policy = True
+        with patch('bot.combat.Combat.estimate', return_value=.8):
+            self.assertTrue(favorable_fight(self.bot, self.obs, self.track, 1.))
+            self.assertFalse(favorable_fight(self.bot, self.obs, self.track, .6))
+        self.bot.pressure_policy = False
+        with patch('bot.combat.Combat.estimate', return_value=.8):
+            self.assertFalse(favorable_fight(self.bot, self.obs, self.track, 1.))
+
 
 if __name__ == '__main__':
     unittest.main()

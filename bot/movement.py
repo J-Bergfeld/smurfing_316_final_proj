@@ -83,15 +83,103 @@ class Movement:
     def __init__(self, world, config, rng):
         self.world=world; self.cfg=config; self.rng=rng
         self.nav_method=os.getenv('BOT_NAV_METHOD','spacing')
+        self.pressure_strafe_enabled=os.getenv('BOT_PRESSURE_STRAFE','1') != '0'
+        self.pressure_steer_enabled=os.getenv('BOT_PRESSURE_STEER','0') == '1'
         self.duel_hunters = frozenset()
         self.duel_until = -1.
         self.cornered_boost = os.getenv('BOT_CORNERED_BOOST') == '1'
         self.path=[]; self.path_goal=None; self.path_at=-100.
         self.strafe=1; self.strafe_until=0
+        self.pressure_last_move=(0.,0.)
         self.cover=None; self.cover_at=-100.
         self.home_xy=None; self.home_at=-100.
+        self.roof_plan=None; self.roof_bans={}; self.roof_last_search=-100.
         self.stuck_since=0.; self.unstuck_until=0.; self.unstuck_dir=(0.,0.)
         self.action_deadline=0.
+
+    def pressure_roof_step(self, obs, allow_climb=True):
+        """Approach, ascend and settle on a nearby roof, or return None.
+
+        A plan is retained between decisions; callers should invoke it only
+        when the pressure policy wants to hold a roof. Combat and urgent zone
+        travel take precedence, and callers can pass allow_climb=False while
+        an opponent watches the approach.
+        """
+        me=obs['self']; pos=me['pos']; now=obs['t']; zone=obs['zone']
+        world=self.world; radius=me['stats'].get('radius',2.5)
+        plan=self.roof_plan
+        if plan and now-plan['last_step']>1.5:
+            plan['started']=now
+        if plan and (math.dist(plan['inside'],zone['next_center'])>zone['next_radius']-8
+                     or now-plan['started']>60):
+            self.roof_bans[plan['id']]=now+60; self.roof_plan=plan=None
+        if plan is None:
+            if now-self.roof_last_search<3: return None
+            self.roof_last_search=now
+            grid=world.baked
+            here=world.nearest_free(world.cell(*pos[:2])) if grid else None
+            component=grid['component'][here[1]*grid['nx']+here[0]] if here else None
+            best=None; best_distance=math.inf
+            for ident,prism in enumerate(world.prisms):
+                if prism['kind']!='building' or self.roof_bans.get(ident,0)>now: continue
+                x0,y0,x1,y1=prism['box']; cx=(x0+x1)*.5; cy=(y0+y1)*.5
+                if min(x1-x0,y1-y0)<2*radius+5: continue
+                if math.hypot(cx-pos[0],cy-pos[1])>260: continue
+                if math.dist((cx,cy),zone['next_center'])>zone['next_radius']-8: continue
+                if not any(s is prism for s in world.solids(cx,cy)): continue
+                top=prism['top']; climb=top-world.ground(cx,cy)
+                if not world.standable(cx,cy,top,radius,me['stats'].get('height',9)): continue
+                drain=me['stats'].get('jet_drain',15) or 15
+                if climb<9 or climb>min(40,(me.get('max_energy',100)-28)/drain*8.9): continue
+                # Probe the four sides of a building's bounding rectangle; a
+                # polygon check rejects sides that do not touch this prism.
+                margin=radius+1.3
+                sx=max(x0+margin,min(x1-margin,pos[0])); sy=max(y0+margin,min(y1-margin,pos[1]))
+                pairs=[((x0-margin,sy),(x0+margin,sy)),((x1+margin,sy),(x1-margin,sy)),
+                       ((sx,y0-margin),(sx,y0+margin)),((sx,y1+margin),(sx,y1-margin))]
+                for ground,edge in pairs:
+                    d=math.dist(pos[:2],ground)
+                    if d>=best_distance or not world.inside(*ground): continue
+                    if not any(s is prism for s in world.solids(*edge)): continue
+                    cell=world.cell(*ground)
+                    if not world.free_cell(cell): continue
+                    if grid and grid['component'][cell[1]*grid['nx']+cell[0]]!=component: continue
+                    best_distance=d
+                    best={'id':ident,'ground':ground,'edge':edge,'inside':(cx,cy),
+                          'top':top,'climb':climb,'started':now,'last_step':now,'state':'approach'}
+            if best is None: return None
+            self.roof_plan=plan=best
+        plan['last_step']=now
+        top=plan['top']; over=any(s is world.prisms[plan['id']] for s in world.solids(*pos[:2]))
+        if me.get('grounded',True) and over and abs(pos[2]-top)<1.6:
+            plan['state']='on'
+        if plan['state']=='on':
+            if not over or abs(pos[2]-top)>2:
+                self.roof_plan=None; return None
+            goal=plan['inside']
+            return {'move':self.navigate(me,goal,now) if math.dist(pos[:2],goal)>2 else [0.,0.],
+                    'jump':False,'boost':False,'mode':'roof'}
+        ground=plan['ground']; distance_to_ground=math.dist(pos[:2],ground)
+        if plan['state']=='approach':
+            if distance_to_ground>=1.6:
+                return {'move':self.navigate(me,ground,now),'jump':False,'boost':False,'mode':'roof-approach'}
+            need=plan['climb']/8.9*(me['stats'].get('jet_drain',15) or 15)+24
+            if not allow_climb:
+                plan.setdefault('wait_started',now)
+                if now-plan['wait_started']>4:
+                    self.roof_bans[plan['id']]=now+20; self.roof_plan=None; return None
+                return {'move':[0.,0.],'jump':False,'boost':False,'mode':'roof-wait'}
+            plan.pop('wait_started',None)
+            if me['energy']<need:
+                return {'move':[0.,0.],'jump':False,'boost':False,'mode':'roof-wait'}
+            plan['state']='climb'; plan['started']=now
+        if now-plan['started']>plan['climb']/8+5 or (me['energy']<2 and pos[2]<top-.5 and not me['grounded']):
+            self.roof_bans[plan['id']]=now+90; self.roof_plan=None; return None
+        dx,dy=plan['edge'][0]-pos[0],plan['edge'][1]-pos[1]; length=math.hypot(dx,dy)
+        move=[dx/length,dy/length] if length>1e-6 else [0.,0.]
+        jump=bool(me['grounded'] and pos[2]<top-1)
+        boost=bool(not me['grounded'] and (pos[2]<top+.7 or (not over and me['vel'][2]<.5)))
+        return {'move':move,'jump':jump,'boost':boost,'mode':'roof-climb'}
 
     def apply_evasion_and_recovery(self, obs, action, mode):
         """Blend evasive movement and update stuck recovery."""
@@ -105,6 +193,12 @@ class Movement:
                 action['move'] = blended
             boost_dodge = laser or (self.cornered_boost and mode == 'cornered' and me['grounded'])
             if boost_dodge and me['energy']>25: action['boost']=True
+        # Short strafes and projectile dodges are deliberate combat moves, not
+        # evidence that an objective route is blocked.  Only trigger the hop
+        # recovery while following a route.
+        if mode in ('fight', 'cornered', 'kite', 'dodge', 'heal', 'idle', 'unstuck'):
+            self.stuck_since=-1.
+            return
         if any(action['move']) and math.hypot(*me['vel'][:2])<1.2 and me['grounded']:
             if self.stuck_since<0: self.stuck_since=t
             elif t-self.stuck_since>.7:
@@ -143,6 +237,11 @@ class Movement:
         p=me['pos']; dx,dy=goal[0]-p[0],goal[1]-p[1]; d=math.hypot(dx,dy)
         if d<.8: return [0.,0.]
         unit=lambda point:[(point[0]-p[0])/max(1e-9,math.dist(p[:2],point[:2])),(point[1]-p[1])/max(1e-9,math.dist(p[:2],point[:2]))]
+        # The ground graph does not represent a roof or an airborne position.
+        # In those cases head toward the destination instead of routing from an
+        # unrelated ground cell, so a bot can leave elevated surfaces.
+        if not me.get('grounded', True) or p[2]-self.world.walk_at(p[0],p[1])>3.5:
+            return unit(goal)
         if d<45 and self.world.line_walkable(p,goal): return unit(goal)
         if not self.path or self.path_goal is None or math.dist(goal[:2],self.path_goal)>5 or t-self.path_at>2.5:
             remaining=max(0.,min(.025,self.action_deadline-time.perf_counter()))
@@ -220,10 +319,14 @@ class Movement:
             self.duel_until = now + 2
         return best
 
-    def combat_move(self,obs,target,seen,squad,want_los=1,items=None):
+    def combat_move(self,obs,target,seen,squad,want_los=1,items=None,desired_override=None):
         if items is None: items={}
         me=obs['self']; p=me['pos']; pos=target['pos']; d=math.dist(p[:2],pos[:2]); weapons={w['kind'] for w in me['weapons'] if w}
+        if self.pressure_strafe_enabled and desired_override is not None and target['kind']=='mech':
+            return self.pressure_strafe(obs, target)
         desired=58 if target['kind']=='npc' else (28 if 'lightning' in weapons and me['energy']>12 else (120 if 'laser' in weapons and squad else 85))
+        if desired_override is not None:
+            desired = desired_override
         if 'lightning' not in weapons:
             if 'lightning' in target.get('weapons',[]): desired=max(desired,64)
             if 'mortar' in target.get('weapons',[]): desired=max(desired,80)
@@ -270,6 +373,62 @@ class Movement:
             if score>best[0]: best=(score,[dx,dy])
         if blocked_side: self.strafe=-self.strafe; self.strafe_until=obs['t']+.5
         return best[1]
+
+    def pressure_strafe(self, obs, target):
+        """Circle in a close range band, steering around immediate obstacles."""
+        me=obs['self']; p=me['pos']; pos=target['pos']
+        dx,dy=pos[0]-p[0],pos[1]-p[1]; d=math.hypot(dx,dy)
+        if d<1e-6: return [0.,0.]
+        if obs['t']>=self.strafe_until:
+            if self.rng.random()<.75: self.strafe=-self.strafe
+            self.strafe_until=obs['t']+.12+self.rng.random()*.16
+        ux,uy=dx/d,dy/d
+        radial=max(-1.,min(1.,(d-42)/15)) if d>42 else max(-1.,(d-18)/15) if d<18 else 0.
+        tangent=1-.6*abs(radial)
+        x,y=ux*radial-uy*self.strafe*tangent,uy*radial+ux*self.strafe*tangent
+        length=math.hypot(x,y); x,y=x/length,y/length
+        if self.pressure_steer_enabled:
+            return self.pressure_steer(obs, (x,y))
+        if not me.get('grounded',True): return [x,y]
+        for angle in (0.,math.pi/4,-math.pi/4,math.pi/2,-math.pi/2):
+            vx=x*math.cos(angle)-y*math.sin(angle); vy=x*math.sin(angle)+y*math.cos(angle)
+            if self.world.line_walkable(p,(p[0]+4*vx,p[1]+4*vy)):
+                return [vx,vy]
+        return [0.,0.]
+
+    def pressure_steer(self, obs, desired):
+        """Choose a short acceleration-aware step toward the desired heading."""
+        me=obs['self']; p=me['pos']; stats=me['stats']; zone=obs['zone']
+        grounded=me.get('grounded',True)
+        acceleration=stats.get('ground_accel',58.5) if grounded else stats.get('air_accel',12.)
+        speed=stats.get('walk_speed',11.7)
+        if any(w and w['kind']=='laser' and w.get('charge',0)>0 for w in me.get('weapons',[])):
+            speed*=stats.get('charge_move_mult',.5)
+        choices=[(0.,0.)]+[(math.cos(i*math.pi/4),math.sin(i*math.pi/4)) for i in range(8)]+[desired]
+        best=(float('-inf'),(0.,0.)); previous=self.pressure_last_move
+        ground_level=grounded and abs(p[2]-self.world.walk_at(*p[:2]))<3.5
+        start_cell=self.world.cell(*p[:2]) if ground_level else None
+        start_free=self.world.free_cell(start_cell) if ground_level else False
+        for dx,dy in choices:
+            vx,vy=me['vel'][:2]; x,y=p[:2]; blocked=False
+            for _ in range(6):
+                tx,ty=dx*speed-vx,dy*speed-vy
+                delta=math.hypot(tx,ty); factor=min(1.,acceleration*.05/max(delta,1e-9))
+                vx+=tx*factor; vy+=ty*factor
+                nx,ny=x+vx*.05,y+vy*.05
+                cell=self.world.cell(nx,ny) if ground_level else None
+                if ground_level and cell!=start_cell and start_free and not self.world.free_cell(cell):
+                    blocked=True; vx=vy=0.; break
+                x,y=nx,ny
+            score=((x-p[0])*desired[0]+(y-p[1])*desired[1])*1.6
+            if blocked: score-=3
+            now=math.dist(p[:2],zone['center']); end=math.dist((x,y),zone['center'])
+            if now < zone['radius']-.5 and end>zone['radius']-4 and end>now:
+                score-=8*(end-now)
+            if dx or dy: score+=.25*(dx*previous[0]+dy*previous[1])
+            if score>best[0]: best=(score,(dx,dy))
+        self.pressure_last_move=best[1]
+        return list(best[1])
 
     def avoid_projectiles(self,obs):
         me=obs['self']; p=me['pos']; cx,cy,cz=p[0],p[1],p[2]+me['stats']['height']*.56
