@@ -12,5 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     BOT_RELOAD_COVER=0 \
     BOT_AIM_MODEL=dev \
     BOT_RELOAD_MODEL=sam \
-    BOT_COVER_AIM=on
+    BOT_COVER_AIM=off \
+    BOT_TARGET_POLICY=finish \
+    BOT_DUEL_SAFETY=off
 ENTRYPOINT ["python3", "-u", "/bot/main.py"]

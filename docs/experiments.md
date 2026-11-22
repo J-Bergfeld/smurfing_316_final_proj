@@ -2,6 +2,35 @@
 
 Practice scores are mean placement points; local simulator results are hypotheses, not official predictions. The current priority is improving practice placement to qualify. [Practice implementation plan](practice-improvement-plan.md) · [Historical experiments and calibration](experiments-history.md) · [Simulator limitations](simulator.md).
 
+## Finishable attacker and safety screen
+
+Relative to the 5.42 aim-only settings, `BOT_TARGET_POLICY=finish` favors
+a currently engaged enemy who is aiming at us or recently hit us when the
+loaded gun can conservatively finish them in up to three rounds. It preserves
+the existing movement and cover selection; with two nearby enemies and under
+55% HP, a weak target no longer cancels retreat. The estimate does not know
+enemy armor or guarantee hits. `BOT_TARGET_POLICY=opportunity` separately
+tests low-health isolated shots without changing movement. `BOT_RELOAD_MODEL=cover`
+tests partial reload behind cover with a conservative approach-time check;
+`BOT_DUEL_SAFETY=on` strengthens exposure penalties in the positional field.
+
+On the counterbalanced, frozen squad proxy `e322ffe`, the eight-seed target
+screen 422940–422947 averaged 5.625 for control, 5.875 for finish and 5.875
+for opportunity. A disjoint confirmation 423240–423247 averaged 6.375 for
+control and 7.5 for finish, with no late or invalid replies. Combined across
+16 pairs, finish averaged 6.6875 versus 6.0 (paired +0.6875, SE 0.617).
+The four-pair identical-control check had deltas [0,0,0,−2], showing that
+timing alone can alter outcomes. These results do not establish an official
+gain; `BOT_TARGET_POLICY=finish` is the only newly enabled trial.
+
+The eight-seed independent screen 422948–422955 averaged 6.0 for control,
+6.125 for cover reload, and 5.375 for stronger exposure penalties. The control
+had one late/invalid reply, and the small panel had large swings; both variants
+remain opt-in. Raw snapshots, seed results and telemetry are in ignored local
+directories `mech-testing/jack-test/target-screen-422940/`,
+`finish-confirm-423240/`, `safety-screen-422948/` and
+`repeat-control-422932/`.
+
 ## Aim-only fight diagnostics
 
 Six squad-proxy traces on seeds 424400–424405 used an exported `26c9ad6`

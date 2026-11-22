@@ -53,6 +53,13 @@ class FieldTests(unittest.TestCase):
         self.assertEqual(self.field.breakdown['dual_exposure_s'],0)
         self.assertAlmostEqual(action['aim'][0],0.)
 
+    def test_duel_safety_preserves_single_target_sheltered_route(self):
+        with patch.dict('os.environ', {'BOT_DUEL_SAFETY':'on'}):
+            action=self.bot.act(self.obs)
+        self.assertEqual(self.bot.mode,'positional-field')
+        self.assertEqual(action['move'],[0.,1.])
+        self.assertEqual(self.field.breakdown['dual_exposure_s'],0)
+
     def test_sound_alone_cannot_supply_second_hunter(self):
         second = self.obs['mechs'].pop()
         self.obs['sounds'] = [dict(kind='gun',bearing=math.pi,dist='mid',age=0.)]

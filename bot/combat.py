@@ -249,6 +249,7 @@ def assess_combat(state, obs, squad, late, hp):
     """Select threats and update the current retreat decision."""
     me=obs['self']; p=me['pos']; t=obs['t']
     seen=[]; choices=[]; hidden=[]; danger=False; crowd=0
+    target_policy=os.getenv('BOT_TARGET_POLICY','baseline')
     for tr in state.tracks.values():
         a=tr['actor']
         if a['kind']!='mech' or t-tr['seen']>2.5: continue
@@ -270,6 +271,15 @@ def assess_combat(state, obs, squad, late, hp):
         if squad and a.get('hp',1400)<=.3*a.get('max_hp',1400): cost-=200
         if recent: cost-=40
         if closing>3: cost-=15
+        if target_policy == 'finish':
+            # Spend a short burst on an attacker we can plausibly finish;
+            # do not commit to a chase or rely on unseen enemy upgrades.
+            gun=next((w for w in me['weapons'] if w and w['kind']=='gun'),None)
+            ammo=gun.get('ammo',0) if gun else 0
+            shot_damage=gun.get('stats',{}).get('damage',0)*.7 if gun else 0
+            finishable=(gun and gun.get('reload',0)<=0 and ammo>0 and d<=gun['stats'].get('range',230)*.9
+                        and a.get('hp',1400)<=shot_damage*min(3,ammo))
+            if finishable and (recent or aimed) and hp>.3: cost-=350
         choices.append((cost,a['id'],a))
     target=min(choices,default=(0,0,None))[2]
     foe=target or (min(hidden,default=(0,0,None))[2] if not squad else None)
@@ -280,6 +290,9 @@ def assess_combat(state, obs, squad, late, hp):
     losing=(near>=2 and hp<.55) or (near>=3 and hp<.8)
     if target and hp<.35 and target['hp']/max(1,target['max_hp'])>hp+.1: losing=True
     if target and target['hp']/max(1,target['max_hp'])<.25 and hp>.2 and near<=2: losing=False
+    if target_policy=='finish' and near>=2 and hp<.55:
+        # A low-health target does not cancel retreat from two close hunters.
+        losing=True; finishing=False
     if losing: state.lose_at=t
     if squad: state.retreat=t-state.lose_at<1.5 and state.lose_at>0
     else:
@@ -288,6 +301,24 @@ def assess_combat(state, obs, squad, late, hp):
         if not state.retreat and ((hp<.38 and t-state.last_threat<2) or swamped): state.retreat=True; state.movement.cover=None
         if state.retreat and not swamped and (hp>.8 or (t-state.last_threat>7 and hp>.55)): state.retreat=False
     return seen, target, foe, danger, finishing
+
+def opportunity_target(state, obs, seen, danger, urgent, mode):
+    """Consider a weak isolated enemy without changing the movement goal."""
+    me=obs['self']; p=me['pos']; t=obs['t']
+    if (danger or urgent or state.retreat or me['hp']/max(1,me['max_hp'])<=.55
+            or mode not in ('idle','loot','home','zone-walk') or t-state.npc_hurt<3):
+        return None
+    gun=next((w for w in me['weapons'] if w and w['kind']=='gun'),None)
+    if not gun or gun.get('ammo',0)<=0 or gun.get('reload',0)>0 or gun.get('cooldown',0)>0:
+        return None
+    nearby=[a for a in seen if math.dist(p[:2],a['pos'][:2])<160]
+    if len(nearby)>1: return None
+    eligible=[tr['actor'] for tr in state.tracks.values()
+              if tr['actor']['kind']=='mech' and tr['seen']==t and tr['los']
+              and math.dist(p[:2],tr['actor']['pos'][:2])<110
+              and tr['actor'].get('hp',1400)<.35*tr['actor'].get('max_hp',1400)]
+    return min(eligible,key=lambda a:(a.get('hp',1400),math.dist(p[:2],a['pos'][:2])),default=None)
+
 
 def apply_weapon_control(state, obs, action, target, foe, squad):
     """Choose a defensive target, aim, and update weapon triggers."""
@@ -302,7 +333,8 @@ def apply_weapon_control(state, obs, action, target, foe, squad):
             error=abs(angle_diff(bearing,state.npc_bearing)) if state.npc_bearing is not None else math.inf
             if d<150 and (actor['id']==state.npc_id or error<.7): candidates.append((error,d,actor['id'],actor))
         if candidates: target=min(candidates)[-1]
-    use_dev_reload=os.getenv('BOT_RELOAD_MODEL','dev') == 'dev'
+    reload_model=os.getenv('BOT_RELOAD_MODEL','dev')
+    use_dev_reload=reload_model in ('dev','cover')
     if use_dev_reload:
         for w in me['weapons']:
             if w and w['kind']=='gun' and w.get('reload',0)<=0 and w.get('ammo',0)==0:
@@ -327,6 +359,14 @@ def apply_weapon_control(state, obs, action, target, foe, squad):
             if use_dev_reload:
                 recent=(t-state.last_hurt<3 or t-getattr(state,'last_dealt',-100)<3)
                 nearby=any(tr['actor']['kind']=='mech' and t-tr['seen']<3 and math.dist(p[:2],tr['actor']['pos'][:2])<160 for tr in state.tracks.values())
+                if reload_model=='cover' and nearby:
+                    threats=[tr['actor'] for tr in state.tracks.values() if tr['actor']['kind']=='mech' and t-tr['seen']<3 and math.dist(p[:2],tr['actor']['pos'][:2])<160]
+                    duration=w['stats'].get('reload',2.4)
+                    chest=(p[0],p[1],p[2]+me['stats'].get('height',9)*.6)
+                    nearby=not all((math.dist(p[:2],a['pos'][:2])-40)/23 > duration+.3 and
+                                   not state.world.shot_clear((a['pos'][0],a['pos'][1],a['pos'][2]+7),chest)
+                                   for a in threats)
+                    if not nearby: recent=False
                 if ammo==0 or (ammo<w['stats']['mag'] and not recent and not nearby): action['reload']=True
             elif ammo<w['stats']['mag']*.6: action['reload']=True
     if target is None and foe is not None:

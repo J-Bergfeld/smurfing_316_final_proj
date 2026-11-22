@@ -1,5 +1,6 @@
 """Choose a verified ground route during a multi-hunter practice encounter."""
 import math
+import os
 import time
 from collections import defaultdict
 
@@ -178,7 +179,8 @@ class PositionalField:
                                and self.world.line_walkable(point,p) for p in loot) else 0.
             next_margin = zone['next_radius'] - math.dist(point, zone['next_center'])
             zone_value = .25 * max(-1., min(1., next_margin/20))
-            score = zone_value + bonus - .3*sound - .5*lines(point) - .2*d/speed
+            safe_duel=os.getenv('BOT_DUEL_SAFETY','off')=='on'
+            score = zone_value + bonus - .3*sound - (1.0 if safe_duel else .5)*lines(point) - .2*d/speed
             if previous and point == previous[0]:
                 score += .25
             shortlist.append((score,point))
@@ -214,7 +216,7 @@ class PositionalField:
                     continue
                 break
             else:
-                total = base - 3*exposed - .25*elapsed
+                total = base - (6 if os.getenv('BOT_DUEL_SAFETY','off')=='on' else 3)*exposed - .25*elapsed
                 if total > best and zone_margin(goal,elapsed+1)>0 and time.perf_counter() <= deadline:
                     best, self.route = total, list(route)
                     self.breakdown = dict(goal=goal,score=total,endpoint=base,

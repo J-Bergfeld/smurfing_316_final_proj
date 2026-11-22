@@ -5,7 +5,7 @@ import random
 import time
 
 from .geometry import Arena, angle_diff, zone_goal, zone_deadline
-from .combat import assess_combat, apply_weapon_control
+from .combat import assess_combat, apply_weapon_control, opportunity_target
 from .loadout import choose_loadout, choose_objective
 from .movement import Movement
 from .positional_field import PositionalField
@@ -174,6 +174,8 @@ class Controller:
                     factor=min(1.,4.6/me['stats']['walk_speed'])
                     action['move']=[v*factor for v in action['move']]
         self.movement.apply_evasion_and_recovery(obs,action,mode)
+        if os.getenv('BOT_TARGET_POLICY','baseline')=='opportunity' and target is None:
+            target=opportunity_target(self,obs,seen,danger,urgent,mode)
         apply_weapon_control(self,obs,action,target,foe,squad)
         if (self.laser_rush and not self.ffa and mode in ('idle', 'loot', 'home') and target is None
                 and t - self.last_threat > 3 and t - self.npc_hurt > 3
