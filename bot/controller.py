@@ -8,6 +8,7 @@ from .geometry import Arena, angle_diff, zone_goal, zone_deadline
 from .combat import assess_combat, apply_weapon_control
 from .loadout import choose_loadout, choose_objective
 from .movement import Movement
+from .positional_field import PositionalField
 from .world import update_perception
 class Controller:
     def __init__(self,hello):
@@ -18,6 +19,7 @@ class Controller:
         self.last_hurt=-100.; self.last_threat=-100.; self.lose_at=-100.; self.retreat=False; self.hold=None; self.phase=None
         self.target_id=None; self.target_at=-100.; self.loot_id=None; self.loot_since=0; self.bad={}
         self.movement=Movement(self.world,self.cfg,self.rng)
+        self.field = PositionalField(self.world) if os.getenv('BOT_POSITIONAL_FIELD') == '1' else None
         self.npc_hurt=-100.; self.npc_bearing=None; self.npc_id=None
         self.hurt_bearing=0.
         self.last_aim=[0.,0.]
@@ -55,6 +57,11 @@ class Controller:
         urgent=not me['in_zone'] or t+need+zone_margin>=deadline
         action={'tick':obs['tick'],'move':[0.,0.],'fire':[False,False],'boost':False,'jump':False}; mode='idle'
         shell=self.movement.avoid_shells(obs)
+        field_eligible = self.field is not None and squad and not urgent and me['grounded']
+        if self.field is not None:
+            self.field.hear(obs)
+            if not field_eligible or shell or t < self.movement.unstuck_until:
+                self.field.key = None
         recovery_move=None
         if self.recovery_enabled and squad:
             if self.recovery_since is not None and (hp>=.8 or urgent or t-self.recovery_since>=10):
@@ -79,6 +86,9 @@ class Controller:
             action['move']=self.movement.navigate(me,goal,t); action['boost']=me['energy']>5; mode='zone'
         elif recovery_move is not None:
             action['move']=recovery_move; action['boost']=me['energy']>10 and any(recovery_move); mode='recover'
+        elif field_eligible and (step := self.field.choose(self, obs, target)) is not None:
+            action['move'] = step
+            mode = 'positional-field'
         elif (self.corner_duel and squad and not urgent and me['grounded']
               and (duel := self.movement.isolate_hunter(obs, self.attacker_memory)) is not None):
             action['move'], target = duel

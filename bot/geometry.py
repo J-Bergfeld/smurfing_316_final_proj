@@ -215,7 +215,7 @@ class Arena:
             fits = baked[offset:]
             if fits and len(fits) != count:
                 raise ValueError('invalid body fit table')
-            self.baked={'fits':fits,'nx':nx,'ny':ny,'main':main,'blocked':blocked,'surface':surf,'clearance':clearance,'component':comp,'top':top,'slabs':slabs}
+            self.baked={'field_cells':identity.get('field_cells'),'fits':fits,'nx':nx,'ny':ny,'main':main,'blocked':blocked,'surface':surf,'clearance':clearance,'component':comp,'top':top,'slabs':slabs}
         for i,prism in enumerate(self.prisms):
             xs=prism['ring'][::2]; ys=prism['ring'][1::2]
             prism['box']=(min(xs),min(ys),max(xs),max(ys))

@@ -9,6 +9,7 @@ Practice scores are mean placement points; local simulator results are hypothese
 | Commit / settings | Score | Squad-proxy mean / official minus proxy | Status / provenance |
 | --- | ---: | --- | --- |
 | `c5aeebba81a5`, default, second run | **5.23** | — | Best reported official practice score. User-reported rerun of the 5.17 shared-torso entry. |
+| `405bcde`, size-aware ground routing | 5.21 | — | User-reported official practice score. Working baseline for the positional-field trial. |
 | `b99a6135379f`, gun-only drum magazine | 5.02 | — | User-reported official practice score. |
 | `d8e77944b48b`, corner duel with gun-only drum magazine | 5.06 | — | User-reported official practice score. |
 | `10fb916`, corner duel with shared-torso aim | 5.21 | — | User-reported official practice score. |
@@ -66,9 +67,17 @@ All panels used simulator `e322ffe`. Local raw evidence is in `mech-testing/tact
 
 The official comparator is `d8e77944b48b` (5.06). The new candidate keeps its corner-duel and gun-only magazine settings. A byte per ground cell records the largest standard mech that fits horizontally and vertically, through double spawn size. Each observation supplies the actual radius and height. Larger or borderline dimensions use direct prism checks cached for the current body size. A size change invalidates the route, cover, shelter and unstuck direction. Shortcuts check diagonal side cells, and navigation waits or replans when it has no verified walkable step.
 
-The real map cell at (25, −326) fits the spawn mech and rejects the six-cube footprint. A scripted low bridge admits a small mech and routes a taller one around it. Open ground and diagonal corner clearance were also checked. The packaged bot answered 300/300 protocol observations within 50 ms. Official placement is pending.
+The real map cell at (25, −326) fits the spawn mech and rejects the six-cube footprint. A scripted low bridge admits a small mech and routes a taller one around it. Open ground and diagonal corner clearance were also checked. The packaged bot answered 300/300 protocol observations within 50 ms. Commit `405bcde` scored **5.21** in official practice, 0.15 above its parent. One run leaves the size of the placement benefit uncertain. Retain size-aware routing for its verified clearance behavior and use this build as the positional-field baseline.
 
-## Proposed positional field
+## Positional-field practice trial
+
+The packaged trial enables `BOT_POSITIONAL_FIELD=1` on the 5.21 size-aware build (`405bcde`). It keeps the selected combat target. In ground squad combat, two distinct aimed or recent attacking mechs must qualify before the field can choose a route. The field evaluates positions near indexed corners and passages, points on the active route, short radial alternatives and the current position. It ranks endpoints for firing opportunity, exposure, zone margin and uncertain sound bearings. Fresh, reachable loot supplies a small bonus. For the three shortlisted endpoints, it samples each verified approach and penalizes time exposed to overlapping enemy fire. A direct step or a complete size-aware ground path is required. If the search budget expires without a verified choice, the existing corner-duel and combat policies take over.
+
+The bundled grid has 1,644 indexed approach cells. The planner considers up to 24 nearby candidates per update with a 3 ms search budget and a 0.5 s refresh interval. It rechecks the next step during travel. A changed body size or newly detected hunter invalidates the cached choice. The field keeps its score breakdown in memory for scripted checks.
+
+In a controlled corner scenario the bot chose an 18 m sheltered approach over a 12 m crossing with cubes. Under contest container limits it selected moving field goals in 4 of 28 scripted two-hunter map positions. These positions check activation only. The protocol replay returned 300/300 answers within 50 ms (maximum 31.6 ms). Official practice score pending.
+
+### Design and validation plan
 
 Start with one decision in practice: choosing the approach to cover in a multi-hunter encounter. Keep the existing target selection, gun control, emergency dodge and urgent zone rotation. Compare this later candidate with the submitted size-aware build. In the first field trial, loot may break a tie between safe routes. A high-value pickup must never make a blocked or lethal route eligible.
 

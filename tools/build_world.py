@@ -13,6 +13,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from bot.geometry import Arena, FIT_HEIGHT, FIT_LEVELS, FIT_RADIUS
+from bot.positional_field import corner_cells
 
 
 def f32(value):
@@ -145,6 +146,7 @@ def build(directory,output):
     source=Path(directory)/'v2'
     identity={'world_sha256':hashlib.sha256((source/'world.json').read_bytes()).hexdigest(),
               'terrain_sha256':hashlib.sha256((source/'terrain.i16').read_bytes()).hexdigest()}
+    identity['field_cells'] = list(corner_cells(nav[0], nav[1], nav[3]))
     Path(output).with_name(Path(output).name+'.meta.json').write_text(json.dumps(identity,indent=2)+'\n')
     return {'nx':nav[0],'ny':nav[1],'main_component':nav[2],
             'blocked':sum(nav[3]),'slab_cells':len(slabs)}
