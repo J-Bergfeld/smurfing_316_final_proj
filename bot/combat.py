@@ -190,20 +190,43 @@ def aim_and_fire(me, target, config, squad=False, world=None):
     center=(pos[0],pos[1],pos[2]+height*.5); dist=math.hypot(center[0]-p[0],center[1]-p[1])
     weapons=me['weapons']; gun=next((w for w in weapons if w and w['kind']=='gun'),None)
     gun_point=intercept(gun_muzzle,center,tv,gun['stats']['speed']) if gun and use_dev_aim else None
+    upper_aim=False; gun_path_clear=None
+    # Prefer the original center intercept. Only look for an exposed upper
+    # body when a loaded gun's center ray is actually blocked.
+    if (gun_point is not None and kind=='mech' and world is not None
+            and os.getenv('BOT_GUN_PARTIAL_COVER')=='1'
+            and gun.get('ammo',0)>0 and gun.get('reload',0)<=0
+            and dist<=gun['stats']['range']*.96):
+        gun_path_clear=world.shot_clear(gun_muzzle,gun_point)
+        if not gun_path_clear:
+            upper=(pos[0],pos[1],pos[2]+height*.8)
+            upper_point=intercept(gun_muzzle,upper,tv,gun['stats']['speed'])
+            if world.shot_clear(gun_muzzle,upper_point):
+                gun_point=upper_point; upper_aim=True; gun_path_clear=True
     gy,gp=aim_at(gun_muzzle,gun_point) if gun_point is not None else (lead(muzzle,center,tv,gun['stats']['speed'],abs(tv[2])<.5) if gun else (0.,0.))
     dx=center[0]+tv[0]*.125-muzzle[0]; dy=center[1]+tv[1]*.125-muzzle[1]
     hy,hp=math.atan2(dy,dx),math.atan2(center[2]-muzzle[2],math.hypot(dx,dy))
     aim=[gy,gp] if gun else [hy,hp]; fire=[False,False]
     tol_y=math.atan2(radius*.75,max(dist,1)); tol_p=math.atan2(height*.4,max(dist,1))
+    # Bound the allowed pitch by actual angles around the predicted upper
+    # point; a small-height / horizontal-distance approximation can admit
+    # shots above the cylinder on steep elevation changes.
+    gun_tol_p=tol_p
+    if upper_aim:
+        horizontal=math.hypot(gun_point[0]-gun_muzzle[0],gun_point[1]-gun_muzzle[1])
+        vertical=gun_point[2]-gun_muzzle[2]
+        lower=math.atan2(vertical-height*.12,horizontal)
+        upper=math.atan2(vertical+height*.12,horizontal)
+        gun_tol_p=min(gp-lower,upper-gp)
     actual=me['aim']; ey=lambda y:abs(angle_diff(y,actual[0])); ep=lambda x:abs(x-actual[1])
     for i,w in enumerate(weapons[:2]):
         if not w: continue
         s=w['stats']; wk=w['kind']
         if wk=='gun':
             fire[i]=bool(dist<=s['range']*.96 and w.get('ammo',0)>0 and w.get('reload',0)<=0 and
-                         max(0.,ey(gy)-st['turn_rate']*.05)<tol_y and max(0.,ep(gp)-st['pitch_rate']*.05)<tol_p)
+                         max(0.,ey(gy)-st['turn_rate']*.05)<tol_y and max(0.,ep(gp)-st['pitch_rate']*.05)<gun_tol_p)
             if fire[i] and use_dev_aim and world is not None:
-                fire[i]=world.shot_clear(gun_muzzle,gun_point)
+                fire[i]=gun_path_clear if gun_path_clear is not None else world.shot_clear(gun_muzzle,gun_point)
         elif wk=='lightning':
             fire[i]=bool(dist<s['range']-1.5 and ey(hy)<math.radians(s['cone_deg'])*.5-.05 and me['energy']>=s['energy'])
         elif wk=='laser' and kind=='mech' and dist<=s['range']*.97:
@@ -231,7 +254,7 @@ def aim_and_fire(me, target, config, squad=False, world=None):
     if gun and os.getenv('BOT_GUN_AIM_CHECK', 'actual') == 'actual':
         yaw_step=max(-st['turn_rate']*.05,min(st['turn_rate']*.05,angle_diff(aim[0],actual[0])))
         pitch_step=max(-st['pitch_rate']*.05,min(st['pitch_rate']*.05,aim[1]-actual[1]))
-        aligned=abs(angle_diff(gy,actual[0]+yaw_step))<tol_y and abs(gp-actual[1]-pitch_step)<tol_p
+        aligned=abs(angle_diff(gy,actual[0]+yaw_step))<tol_y and abs(gp-actual[1]-pitch_step)<gun_tol_p
         for i,w in enumerate(weapons[:2]):
             if w and w['kind']=='gun': fire[i]=fire[i] and aligned
     return {'aim':aim,'fire':fire}

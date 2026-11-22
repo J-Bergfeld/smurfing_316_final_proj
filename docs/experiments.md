@@ -4,6 +4,14 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 **Scoring context:** Unless explicitly marked builders-4, the official practice scores and comparisons in this document use the old scoring setup. The user reports that `835d4a7` was rescored at **5.21** under builders-4; its old score was **5.23**. Do not compare old scores directly with builders-4 scores.
 
+## Close-range gun timing — rejected local experiment
+
+On `6f1b276`, a candidate changed gun-only aiming within 65 m to predict the shooter's movement, the target's movement before the firing substep, the forward muzzle offset, and the proxy simulator's discrete projectile steps. The existing policy instead aims from observed positions. The hypothesis was that compensating for movement before firing would improve close-range hits. The candidate was limited to grounded, non-jumping situations where the gun could fire within the next two physics ticks; it retained the original model when its assumptions could not be applied.
+
+The change was **rejected and reverted**. In 384 open-ground cases with perfect initial alignment and no spread, both versions hit every time. In 5,000 synthetic cases with varied alignment, movement, boost, spread and cooldown, the original produced **3,144 hits** and the candidate **3,125**. Two further synthetic batches also favored the original overall (4,495 vs 4,421 and 4,512 vs 4,467 hits). Some apparent improvements in particular distance or velocity subgroups were identified after examining the data and did not consistently reproduce in held-out checks.
+
+These are open-ground local proxy-physics simulations with artificial scenario distributions, not match results or official scores. The candidate changed some trigger decisions as well as the aim point, so the hit totals do not isolate aim-angle accuracy. The experiment does not prove every close-range correction is harmful; it means this implementation did not demonstrate a reliable improvement worth submitting. The experimental patch and analysis scripts were left under `/private/tmp` and may not persist.
+
 ## Official practice — builders-4
 
 **Subtle gun-range candidate — score pending:** Starting from `fb99ebd` (4.93),
