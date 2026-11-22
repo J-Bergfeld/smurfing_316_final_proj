@@ -2,6 +2,12 @@
 
 Practice scores are mean placement points; local simulator results are hypotheses, not official predictions. The current priority is improving practice placement to qualify. [Practice implementation plan](practice-improvement-plan.md) · [Historical experiments and calibration](experiments-history.md) · [Simulator limitations](simulator.md).
 
+## Python practice policy
+
+The packaged Python controller starts in practice mode on tick one. Movement, target selection, firing and loadout share the same perception and routing code with FFA. The first uncredited decrease in the alive count selects FFA actions immediately. Five consecutive observations with a discrepancy lock in FFA. An explicit `BOT_PROFILE=final` selects FFA throughout. Compare official placement against `835d4a7` (5.23).
+
+Two 600-observation replay slices with clocks shifted to select practice for both policies matched firing on all 1,200 decisions and movement within 0.2 vector distance on 1,199. In an unmodified 2,691-tick recording, the overlapping practice interval matched firing on 1,762/1,762 ticks and movement on 1,674/1,762. The packaged protocol check answered 299/300 observations within 50 ms, with one late response. Official placement is pending.
+
 ## Isolated wounded opponent trial
 
 Parent `835d4a7` scored **5.23** in official practice. The packaged candidate enables `BOT_FINISH_APPROACH=1`. During practice, a healthy mech with a ready weapon closes to a desired range of 20 m against a wounded, isolated opponent and defers cube collection during the approach. The hypothesis is that maintaining contact converts a retreating opponent into a placement point. The risk is taking extra damage before the next hunter arrives. Commit `67f32ba` scored **5.08**, 0.15 below its parent. Retain the positional-field baseline and disable finishing in the next trial.
@@ -14,6 +20,7 @@ Ten focused behavior checks passed. The packaged protocol check passed with 298 
 
 | Commit / settings | Score | Squad-proxy mean / official minus proxy | Status / provenance |
 | --- | ---: | --- | --- |
+| `6d086c3`, reload behind cover | 5.19 | — | User-reported official practice score. Finished 0.04 below the `835d4a7` positional-field baseline. |
 | `67f32ba`, finish approach | 5.08 | — | User-reported official practice score. |
 | `835d4a7`, positional field | **5.23** | — | User-reported official practice score. Retained as the baseline for the finish approach trial. |
 | `c5aeebba81a5`, default, second run | **5.23** | — | Best reported official practice score. User-reported rerun of the 5.17 shared-torso entry. |

@@ -33,7 +33,7 @@ def pickup_slot(item, world):
     return weapon_value(item['kind'],world)>weapon_value(old['kind'],world),worst
 
 
-def choose_loadout(obs, config):
+def choose_loadout(obs, config, *, practice=False):
     out={}
     me=obs['self']; p=me['pos']
     for pickup in obs.get('pickups',[]):
@@ -49,7 +49,7 @@ def choose_loadout(obs, config):
         break
     if obs.get('offer'):
         order=['plating','armor','laser_damage','laser_charge','nanites','gun_damage','gun_rate','lightning_efficiency','lightning_range','servos','gun_mag','gun_velocity','gyros','lightning_chain','reactor','capacitor','mortar_reload','mortar_splash','mortar_velocity','sensors','jets','laser_pierce']
-        if {w['kind'] for w in me['weapons'] if w} == {'gun'}:
+        if not practice and {w['kind'] for w in me['weapons'] if w} == {'gun'}:
             order.remove('gun_mag')
             order.insert(order.index('gun_damage'), 'gun_mag')
         out['pick']=min(range(len(obs['offer']['choices'])),key=lambda i:order.index(obs['offer']['choices'][i]['id']) if obs['offer']['choices'][i]['id'] in order else len(order))

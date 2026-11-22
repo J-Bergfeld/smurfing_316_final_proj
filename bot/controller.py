@@ -10,12 +10,14 @@ from .loadout import choose_loadout, choose_objective
 from .movement import Movement
 from .positional_field import PositionalField
 from .world import update_perception
+
+
 class Controller:
     def __init__(self,hello):
         self.cfg=hello['config']; self.world=Arena(hello['map']['dir']); self.rng=random.Random(hello.get('seed') or hello.get('slot',0)+1)
         self.body_size = (self.cfg['mech']['radius'], self.cfg['mech']['height'])
         self.world.set_body_size(*self.body_size)
-        self.tracks={}; self.items={}; self.hits={}; self.attacker_memory={}; self.kills=set(); self.initial=None; self.unexplained=0; self.ffa=False
+        self.tracks={}; self.items={}; self.hits={}; self.attacker_memory={}; self.kills=set(); self.initial=None; self.unexplained=0
         self.last_hurt=-100.; self.last_threat=-100.; self.lose_at=-100.; self.retreat=False; self.hold=None; self.phase=None
         self.target_id=None; self.target_at=-100.; self.loot_id=None; self.loot_since=0; self.bad={}
         self.movement=Movement(self.world,self.cfg,self.rng)
@@ -24,7 +26,7 @@ class Controller:
         self.hurt_bearing=0.
         self.last_aim=[0.,0.]
         self.corner_duel = os.getenv('BOT_CORNER_DUEL') == '1'
-        self.supply_drops = os.getenv('BOT_SUPPLY_DROPS', '1') == '1'
+        self.supply_drops = os.getenv('BOT_SUPPLY_DROPS', '0') == '1'
         self.finish_approach = os.getenv('BOT_FINISH_APPROACH') == '1'
         self.reload_cover = os.getenv('BOT_RELOAD_COVER') == '1'
         self.reload_peek = None
@@ -34,7 +36,9 @@ class Controller:
         self.recovery_enabled=os.getenv('BOT_SQUAD_RECOVERY','legacy')=='cover'
         self.farming_policy=os.getenv('BOT_SQUAD_FARMING','legacy')
         self.squad_cover=os.getenv('BOT_SQUAD_POSITION','legacy')=='cover'
-        self.nav_method=os.getenv('BOT_NAV_METHOD','spacing')
+        self.nav_method=os.getenv('BOT_NAV_METHOD','legacy')
+        self.ffa = os.getenv('BOT_PROFILE') == 'final'
+        self.practice_rng = random.SystemRandom()
         self.recovery_since=None; self.recovery_cooldown=-100.
 
     def act(self,obs):
@@ -50,7 +54,8 @@ class Controller:
             self.movement.cover = None
             self.movement.home_xy = None
         self.update_world(obs); me=obs['self']; p=me['pos']; t=obs['t']; z=obs['zone']; hp=me['hp']/max(1,me['max_hp'])
-        practice = not self.ffa and t > 20
+        practice = not self.ffa and self.unexplained == 0
+        self.movement.rng = self.practice_rng if practice else self.rng
         hide = practice and self.late_hide and z['next_radius'] <= 140 and obs['alive'] > 3
         squad = practice and not hide
         late = (z['next_radius'] <= 70 and not hide) or obs['alive'] <= 3
@@ -111,6 +116,7 @@ class Controller:
             distance=math.dist(p[:2],foe['pos'][:2]); gun=next((w for w in me['weapons'] if w and w['kind']=='gun'),None); laser_weapon=next((w for w in me['weapons'] if w and w['kind']=='laser'),None)
             ready=bool(gun and gun['ammo']>0 and gun['reload']<=.25 and distance<=gun['stats']['range']-10)
             hot=bool(laser_weapon and laser_weapon['charge']>=laser_weapon['stats']['charge']-.3 and distance<=laser_weapon['stats']['range']-5)
+            wounded = squad and hp > .42 and foe['hp'] < .38 * foe.get('max_hp', 1400) and self.combat_crowd <= 2
             close_finish = (self.finish_approach and squad and not urgent and not self.retreat
                             and finishing and hp > .55 and (ready or hot)
                             and foe['hp'] < .35 * foe.get('max_hp', 1400)
@@ -124,8 +130,11 @@ class Controller:
             want_los=1 if ready else -1
             if (not squad or self.squad_cover) and not hot and any(a.get('charging') and abs(angle_diff(a['aim'][0],math.atan2(p[1]-a['pos'][1],p[0]-a['pos'][0])))<.3 for a in seen): want_los=-1.6
             action['move'] = self.movement.combat_move(obs, foe, seen, squad, want_los,
-                                                      None if close_finish else self.items, close_finish=close_finish)
+                                                      None if close_finish else self.items,
+                                                      close_finish=wounded or close_finish)
             mode = 'finish' if close_finish else 'fight'
+            if squad and distance > 50 and me['energy'] > 55 and want_los > 0:
+                action['boost'] = any(w and w['kind'] == 'lightning' for w in me['weapons'])
             if squad and not close_finish and not (self.farming_policy in ('selective','cubes') and danger):
                 radius=70 if hp>.5 else 70*.57
                 cubes=[item for kind,item,_ in self.items.values() if kind=='cubes' and math.dist(p[:2],item['pos'][:2])<radius]
@@ -159,7 +168,18 @@ class Controller:
                         action['move'] = self.movement.navigate(me, item['pos'], t)
                 elif kind=='npc' and t-when<1 and self.tracks[ident]['los'] and d<75:
                     target=item; action['move']=self.movement.combat_move(obs,item,seen,squad,1,self.items)
-                elif kind=='crates' and d<50: target=dict(item,kind='crate',vel=[0,0,0])
+                elif kind=='crates' and d<50:
+                    if not squad:
+                        target = dict(item, kind='crate', vel=[0,0,0])
+                    else:
+                        mid = (*item['pos'][:2], item['pos'][2] + self.cfg['crates']['height'] * .5)
+                        muzzle = (*p[:2], p[2] + me['stats']['muzzle_height'])
+                        if self.world.shot_clear(muzzle, mid):
+                            target = dict(item, kind='crate', vel=[0,0,0])
+                        else:
+                            action['move'] = self.movement.navigate(me, item['pos'], t)
+                        if target is not None and d < 12:
+                            action['move'] = [(p[i]-item['pos'][i])/max(d,.1) for i in range(2)]
                 else:
                     action['move'] = self.movement.navigate(me, item['pos'], t)
                     if self.laser_rush and kind == 'pickups' and item['kind'] == 'laser' and not self.ffa:
@@ -184,7 +204,9 @@ class Controller:
             pos = seen[0]['pos']
             action['aim'] = [math.atan2(pos[1]-p[1], pos[0]-p[0]), me['aim'][1]]
         if mode=='recover': action['fire']=[False,False]
-        action.update(choose_loadout(obs,self.cfg))
+        action.update(choose_loadout(obs,self.cfg,practice=squad))
+        if squad and not any(action['move']):
+            action['boost'] = False
         self.mode=mode
         return action
 

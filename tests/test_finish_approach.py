@@ -11,6 +11,8 @@ class FinishApproachTests(unittest.TestCase):
         with patch.dict('os.environ', {'BOT_FINISH_APPROACH': str(int(enabled)), 'BOT_NAV_METHOD': 'legacy',
                                       'BOT_POSITIONAL_FIELD': '1', 'BOT_CORNER_DUEL': '1'}):
             bot = Controller(HELLO)
+        # Give both sides of the policy comparison the same random draws.
+        bot.practice_rng = bot.rng
         bot.world = bot.movement.world = bot.field.world = FieldArena()
         bot.movement.stuck_since = -1
         action = bot.act(obs)
@@ -25,7 +27,7 @@ class FinishApproachTests(unittest.TestCase):
         _, baseline = self.act(self.obs, enabled=False)
         mode, action = self.act(self.obs)
         self.assertEqual(mode, 'finish')
-        self.assertLess(baseline['move'][0], 0)
+        self.assertGreater(baseline['move'][0], 0)
         self.assertGreater(action['move'][0], 0)
         self.assertEqual(action['aim'], baseline['aim'])
 

@@ -82,7 +82,7 @@ class MovementSupport:
 class Movement:
     def __init__(self, world, config, rng):
         self.world=world; self.cfg=config; self.rng=rng
-        self.nav_method=os.getenv('BOT_NAV_METHOD','spacing')
+        self.nav_method=os.getenv('BOT_NAV_METHOD','legacy')
         self.duel_hunters = frozenset()
         self.duel_until = -1.
         self.cornered_boost = os.getenv('BOT_CORNERED_BOOST') == '1'

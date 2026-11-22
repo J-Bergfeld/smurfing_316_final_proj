@@ -223,7 +223,7 @@ def aim_and_fire(me, target, config, squad=False, world=None):
                 if not gun or gun.get('reload',0)>0 or gun.get('ammo',0)==0 or dist>gun['stats']['range']*.96: aim=[yaw,pitch]
                 fire[i]=max(0.,ey(yaw)-st['turn_rate']*.05)<.04 and max(0.,ep(pitch)-st['pitch_rate']*.05)<.03
     aim[1]=max(st['min_pitch'],min(st['max_pitch'],aim[1]))
-    if gun and os.getenv('BOT_GUN_AIM_CHECK', 'actual') == 'actual':
+    if gun and not squad and os.getenv('BOT_GUN_AIM_CHECK', 'actual') == 'actual':
         yaw_step=max(-st['turn_rate']*.05,min(st['turn_rate']*.05,angle_diff(aim[0],actual[0])))
         pitch_step=max(-st['pitch_rate']*.05,min(st['pitch_rate']*.05,aim[1]-actual[1]))
         aligned=abs(angle_diff(gy,actual[0]+yaw_step))<tol_y and abs(gp-actual[1]-pitch_step)<tol_p
@@ -254,9 +254,10 @@ def assess_combat(state, obs, squad, late, hp):
         cost=d+(.18 if squad else 60/1400)*a.get('hp',1400)
         if squad and a['id']==state.target_id and t-state.target_at<2: cost-=200
         if squad and a.get('hp',1400)<=.3*a.get('max_hp',1400): cost-=200
-        if recent: cost-=40
+        if t-state.hits.get(a['id'],-100)<4: cost-=40
         if closing>3: cost-=15
         choices.append((cost,a['id'],a))
+    state.combat_crowd = crowd
     target=min(choices,default=(0,0,None))[2]
     foe=target or (min(hidden,default=(0,0,None))[2] if not squad else None)
     if target: state.target_id=target['id']; state.target_at=t
@@ -303,7 +304,10 @@ def apply_weapon_control(state, obs, action, target, foe, squad):
         else: yaw=me['aim'][0]+.35
         action['aim']=[yaw,0]
         for w in me['weapons']:
-            if w and w['kind']=='gun' and w.get('reload',0)<=0 and w.get('ammo',0)<w['stats']['mag']*.6: action['reload']=True
+            if w and w['kind']=='gun' and w.get('reload',0)<=0 and w.get('ammo',0)<w['stats']['mag']:
+                low = w['ammo'] < w['stats']['mag']*.6
+                if low or (squad and (w['ammo'] <= w['stats']['mag']*.6 or t-state.last_threat > 3)):
+                    action['reload'] = True
     if target is None and foe is not None:
         distance=math.dist(p[:2],foe['pos'][:2])
         for i,w in enumerate(me['weapons'][:2]):

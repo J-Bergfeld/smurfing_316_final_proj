@@ -5,8 +5,5 @@ COPY bot ./bot
 ENV PYTHONDONTWRITEBYTECODE=1 \
     BOT_NAV_METHOD=legacy \
     BOT_GUN_AIM_CHECK=actual \
-    BOT_SUPPLY_DROPS=0 \
-    BOT_CORNER_DUEL=1 \
-    BOT_POSITIONAL_FIELD=1 \
-    BOT_RELOAD_COVER=1
+    BOT_SUPPLY_DROPS=0
 ENTRYPOINT ["python3", "-u", "/bot/main.py"]

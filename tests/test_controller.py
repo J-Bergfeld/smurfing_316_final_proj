@@ -35,6 +35,7 @@ class ControllerTests(unittest.TestCase):
         bot.act(obs)
         self.assertEqual(bot.assess_combat.call_args.args[1:3], (False, False))
         self.assertFalse(bot.ffa)
+        obs['events'] = [{'type': 'kill', 'target': i} for i in range(obs['alive'] - 3)]
         obs['alive'] = 3
         bot.act(obs)
         self.assertEqual(bot.assess_combat.call_args.args[1:3], (True, True))
@@ -60,7 +61,8 @@ class ControllerTests(unittest.TestCase):
         self.assertIsNone(bot.choose_objective(obs, 1., False, False))
 
     def test_supply_drop_approach_hold_and_yield(self):
-        bot = Controller(HELLO)
+        with patch.dict('os.environ', {'BOT_SUPPLY_DROPS': '1'}):
+            bot = Controller(HELLO)
         obs = observation()
         obs.update(t=100, tick=1000)
         drop = dict(id=20000, pos=[30, 0, 0], radius=8, lands_in=0,
