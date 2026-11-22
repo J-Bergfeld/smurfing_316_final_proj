@@ -1,5 +1,6 @@
 """Choose a verified ground route during a multi-hunter practice encounter."""
 import math
+import os
 import time
 from collections import defaultdict
 
@@ -36,6 +37,7 @@ def corner_index(world):
 class PositionalField:
     def __init__(self, world):
         self.world = world
+        self.closing_hunter_field = os.getenv('BOT_CLOSING_HUNTER_FIELD') == '1'
         self.anchors = corner_index(world)
         self.route = []
         self.key = None
@@ -93,7 +95,7 @@ class PositionalField:
 
         return sectors
 
-    def hunters(self, state, now, start):
+    def hunters(self, state, now, start, target_id=None, own_velocity=(0.,0.), allow_closing=False):
         threats = []
         active = []
         for ident, tr in state.tracks.items():
@@ -102,11 +104,20 @@ class PositionalField:
                 continue
             p = actor['pos']
             reach = max((state.cfg['weapons'][w].get('range',200) for w in actor['weapons']), default=0)
-            if math.dist(start,p[:2]) > reach + 40:
+            distance=math.dist(start,p[:2])
+            if distance > reach + 40:
                 continue
             facing = math.atan2(start[1]-p[1],start[0]-p[0])
             hit = now-state.attacker_memory.get(ident,-100) < 3
-            if not hit and abs(angle_diff(facing,actor['aim'][0])) > .22:
+            aimed=abs(angle_diff(facing,actor['aim'][0])) <= .22
+            closing=False
+            if (self.closing_hunter_field and allow_closing and target_id is not None
+                    and ident != target_id and age == 0 and tr['los']
+                    and 0 < distance <= reach):
+                velocity=actor.get('vel',[0,0,0])
+                closing=((start[0]-p[0])*(velocity[0]-own_velocity[0])+
+                         (start[1]-p[1])*(velocity[1]-own_velocity[1]))/distance>3
+            if not hit and not aimed and not closing:
                 continue
             if age == 0 and (tr['los'] or hit):
                 active.append(ident)
@@ -121,7 +132,13 @@ class PositionalField:
         start = tuple(me['pos'][:2])
         stats = me['stats']
         deadline = min(time.perf_counter()+.003, state.action_deadline)
-        threats, active = self.hunters(state, now, start)
+        # Only the new early warning is withheld for a nearby nearly defeated
+        # target; existing aimed/recent-hit detection remains unchanged.
+        finishing=bool(self.closing_hunter_field and target and math.dist(start,target['pos'][:2])<120 and
+                       (target.get('hp',1400)<200 or target.get('hp',1400)<me['hp']*.5))
+        threats, active = self.hunters(state, now, start,
+                                      target.get('id') if target else None,
+                                      me.get('vel',[0,0,0])[:2],not finishing)
         context = (target['id'] if target else None, state.body_size, tuple(zone['next_center']), zone['next_radius'])
         # Finish the verified step when its own cover hides the second hunter.
         if (active and self.breakdown and self.key and self.key[1:] == context

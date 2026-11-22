@@ -14,6 +14,79 @@ from test_bot import HELLO, enemy, observation
 
 
 class ControllerTests(unittest.TestCase):
+    def test_reload_lane_anticipates_only_visible_healthy_gun_only_fights(self):
+        bot=Controller(HELLO); obs=observation(); obs.update(t=10, tick=200)
+        foe=enemy(100); bot.tracks[foe['id']]={'actor':foe,'seen':10,'los':True}
+        bot.update_world=Mock()
+        bot.assess_combat=Mock(return_value=([foe],foe,foe,True,False))
+        bot.field=None; bot.corner_duel=False
+        bot.movement.avoid_shells=Mock(return_value=None)
+        bot.movement.combat_move=Mock(return_value=[1,0])
+        bot.movement.apply_evasion_and_recovery=Mock()
+        bot.hold=(*obs['zone']['center'],obs['zone']['radius'])
+        gun=obs['self']['weapons'][0]; gun.update(ammo=0,reload=.3)
+
+        def want():
+            with patch('bot.controller.apply_weapon_control'):
+                bot.act(obs)
+            return bot.movement.combat_move.call_args.args[4]
+
+        bot.reload_lane=False
+        self.assertEqual(want(),-1)
+        bot.reload_lane=True
+        self.assertEqual(want(),1)
+        gun['reload']=.36
+        self.assertEqual(want(),-1)
+        gun['reload']=.3
+        obs['self']['hp']=980
+        self.assertEqual(want(),-1)
+        obs['self']['hp']=1400
+        bot.tracks[foe['id']]['los']=False
+        self.assertEqual(want(),-1)
+        bot.tracks[foe['id']]['los']=True
+        bot.tracks[foe['id']]['seen']=9.9
+        self.assertEqual(want(),-1)
+        bot.tracks[foe['id']]['seen']=10
+        second=enemy(80); second['id']=8
+        bot.assess_combat.return_value=([foe,second],foe,foe,True,False)
+        self.assertEqual(want(),-1)
+        bot.assess_combat.return_value=([foe],foe,foe,True,False)
+        foe['kind']='npc'
+        self.assertEqual(want(),-1)
+        foe['kind']='mech'
+        foe['pos'][0]=gun['stats']['range']
+        self.assertEqual(want(),-1)
+
+    def test_reload_lane_yields_to_shell_and_urgent_zone(self):
+        bot=Controller(HELLO); obs=observation(); obs.update(t=10,tick=200)
+        foe=enemy(100); bot.tracks[foe['id']]={'actor':foe,'seen':10,'los':True}
+        bot.update_world=Mock(); bot.assess_combat=Mock(return_value=([foe],foe,foe,True,False))
+        bot.reload_lane=True; bot.field=None; bot.corner_duel=False
+        bot.movement.combat_move=Mock(return_value=[1,0]); bot.movement.navigate=Mock(return_value=[1,0])
+        bot.movement.apply_evasion_and_recovery=Mock(); bot.hold=(*obs['zone']['center'],obs['zone']['radius'])
+        obs['self']['weapons'][0].update(ammo=0,reload=.3)
+        bot.movement.avoid_shells=Mock(return_value=[0,1])
+        with patch('bot.controller.apply_weapon_control'):
+            bot.act(obs)
+        self.assertEqual(bot.mode,'dodge'); bot.movement.combat_move.assert_not_called()
+        bot.movement.avoid_shells.return_value=None
+        obs['self'].update(pos=[600,0,0],in_zone=False)
+        with patch('bot.controller.apply_weapon_control'):
+            bot.act(obs)
+        self.assertEqual(bot.mode,'zone'); bot.movement.combat_move.assert_not_called()
+
+    def test_reload_lane_does_not_fire_an_empty_gun(self):
+        bot=Controller(HELLO); obs=observation(); obs.update(t=10,tick=200)
+        foe=enemy(100); bot.tracks[foe['id']]={'actor':foe,'seen':10,'los':True}
+        bot.update_world=Mock(); bot.assess_combat=Mock(return_value=([foe],foe,foe,True,False))
+        bot.reload_lane=True; bot.field=None; bot.corner_duel=False
+        bot.movement.avoid_shells=Mock(return_value=None); bot.movement.combat_move=Mock(return_value=[1,0])
+        bot.movement.apply_evasion_and_recovery=Mock(); bot.hold=(*obs['zone']['center'],obs['zone']['radius'])
+        obs['self']['weapons'][0].update(ammo=0,reload=.3)
+        action=bot.act(obs)
+        self.assertEqual(bot.movement.combat_move.call_args.args[4],1)
+        self.assertFalse(action['fire'][0])
+
     @unittest.skip('Cube-upgrade experiment is not present in this branch')
     def test_cube_upgrade_value_uses_live_thresholds(self):
         from bot.loadout import cube_upgrade_multiplier

@@ -26,6 +26,7 @@ class Controller:
         self.hurt_bearing=0.
         self.last_aim=[0.,0.]
         self.corner_duel = os.getenv('BOT_CORNER_DUEL') == '1'
+        self.reload_lane = os.getenv('BOT_RELOAD_LANE') == '1'
         self.supply_drops = os.getenv('BOT_SUPPLY_DROPS', '1') == '1'
         self.slot = hello['slot']
         self.laser_rush = os.getenv('BOT_LASER_RUSH') == '1'
@@ -102,6 +103,17 @@ class Controller:
         elif foe and not (self.retreat and not finishing and not late):
             distance=math.dist(p[:2],foe['pos'][:2]); gun=next((w for w in me['weapons'] if w and w['kind']=='gun'),None); laser_weapon=next((w for w in me['weapons'] if w and w['kind']=='laser'),None)
             ready=bool(gun and gun['ammo']>0 and gun['reload']<=.25 and distance<=gun['stats']['range']-10)
+            # Get into a firing lane just before an empty gun finishes
+            # reloading, without changing the weapon trigger or reload.
+            track=self.tracks.get(foe['id'])
+            if (self.reload_lane and squad and not urgent and not self.retreat and hp>.7
+                    and target is not None and foe['kind']=='mech' and target['id']==foe['id']
+                    and track and track['seen']==t and track['los']
+                    and not any(a['kind']=='mech' and a['id']!=foe['id'] and math.dist(p[:2],a['pos'][:2])<100 for a in seen)
+                    and {w['kind'] for w in me['weapons'] if w}=={'gun'}
+                    and gun and gun['ammo']==0 and 0<gun['reload']<=.35
+                    and distance<=gun['stats']['range']-10):
+                ready=True
             hot=bool(laser_weapon and laser_weapon['charge']>=laser_weapon['stats']['charge']-.3 and distance<=laser_weapon['stats']['range']-5)
             if hot or (squad and not self.squad_cover and any(w and w['kind'] in ('laser','lightning') for w in me['weapons'])): ready=True
             if squad and self.squad_cover:

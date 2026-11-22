@@ -63,6 +63,50 @@ class FieldTests(unittest.TestCase):
         self.bot.act(self.obs)
         self.assertEqual(self.bot.mode,'positional-field')
 
+    def test_visible_closing_second_hunter_activates_existing_field(self):
+        self.obs['mechs'][0]['hp'] = 1000
+        second=self.obs['mechs'][1]
+        second['aim']=[math.pi,0]; second['vel']=[6,0,0]
+        self.field.closing_hunter_field = False
+        self.bot.act(self.obs)
+        self.assertNotEqual(self.bot.mode,'positional-field')
+        self.field.closing_hunter_field = True
+        self.obs['t'] += .1
+        action=self.bot.act(self.obs)
+        self.assertEqual(self.bot.mode,'positional-field')
+        self.assertEqual(self.field.breakdown['goal'],(0,18))
+        self.assertAlmostEqual(action['aim'][0],0.)
+
+    def test_closing_hunter_requires_visibility_range_and_relative_motion(self):
+        self.field.closing_hunter_field=True
+        first=dict(enemy(70),hp=1000)
+        second=dict(enemy(-70),id=8,aim=[math.pi,0],vel=[6,0,0])
+        self.bot.tracks={7:dict(actor=first,seen=30,los=True),8:dict(actor=second,seen=30,los=True)}
+        _,active=self.field.hunters(self.bot,30,(0,0),7,(0,0),True)
+        self.assertEqual(set(active),{7,8})
+        self.bot.tracks[8]['seen']=29.9
+        _,active=self.field.hunters(self.bot,30,(0,0),7,(0,0),True)
+        self.assertEqual(active,[7])
+        self.bot.tracks[8]['seen']=30; self.bot.tracks[8]['los']=False
+        _,active=self.field.hunters(self.bot,30,(0,0),7,(0,0),True)
+        self.assertEqual(active,[7])
+        self.bot.tracks[8]['los']=True
+        _,active=self.field.hunters(self.bot,30,(0,0),7,(5,0),True)
+        self.assertEqual(active,[7])
+        second['pos']=[-231,0,0]
+        _,active=self.field.hunters(self.bot,30,(0,0),7,(0,0),True)
+        self.assertEqual(active,[7])
+
+    def test_closing_warning_cannot_displace_near_lethal_finish(self):
+        self.field.closing_hunter_field=True
+        self.obs['mechs'][1].update(aim=[math.pi,0],vel=[6,0,0])
+        self.bot.act(self.obs)
+        self.assertNotEqual(self.bot.mode,'positional-field')
+        # The original two-hunter defense still applies at the same health.
+        self.obs['mechs'][1]['aim']=[0,0]; self.obs['t'] += .1
+        self.bot.act(self.obs)
+        self.assertEqual(self.bot.mode,'positional-field')
+
     def test_cached_step_rechecked_and_growth_changes_route(self):
         self.bot.act(self.obs)
         self.obs['t'] += .1
