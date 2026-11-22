@@ -258,7 +258,7 @@ def assess_combat(state, obs, squad, late, hp):
         if not engage or not tr['los'] or d>(240 if squad else 215): continue
         cost=d+(.18 if squad else 60/1400)*a.get('hp',1400)
         if squad and a['id']==state.target_id and t-state.target_at<2: cost-=200
-        if squad and a.get('hp',1400)<=.3*a.get('max_hp',1400): cost-=220
+        if squad and a.get('hp',1400)<=.3*a.get('max_hp',1400): cost-=200
         if recent: cost-=40
         if closing>3: cost-=15
         choices.append((cost,a['id'],a))
