@@ -2,6 +2,31 @@
 
 Practice scores are mean placement points; local simulator results are hypotheses, not official predictions. The current priority is improving practice placement to qualify. [Practice implementation plan](practice-improvement-plan.md) · [Historical experiments and calibration](experiments-history.md) · [Simulator limitations](simulator.md).
 
+## Aim-only fight diagnostics
+
+Six squad-proxy traces on seeds 424400–424405 used an exported `26c9ad6`
+runtime and its packaged settings, with a trace-only wrapper adding selected
+target labels. They scored 2, 2, 9, 4, 10 and 2 points; none had late or
+invalid replies. Across 2,163 gun decisions with a selected mech target,
+the offline classifier counted 1,108 while the gun was cooling down, 683
+while reloading, 195 with yaw/shared-aim error, and 69 with an obstructed
+predicted shot path. Categories are assigned in priority order and count
+observations, not attempted shots; cooldown may coexist with a held trigger.
+The traces recorded 458 gun hit events against mechs.
+
+In the two traces with controller mode labels (424404–424405), 202 decisions
+had no initially selected mech target and an approximate geometric firing
+lane to a nearby tracked mech. Modes were loot 78, idle 37, zone-walk 13,
+cover 6 and home 68. On 110 of those decisions the gun was loaded and its
+cooldown and reload were zero; only 6 had the first qualifying enemy aimed
+at us. These are not confirmed missed shots: tracked actors can be remembered,
+the approximation ignores canopy, the controller can select an NPC inside
+weapon control, and non-engagement can be strategically deliberate. The
+wrapper itself adds debug bytes and runtime work; the proxy's opponents and
+physics are not the official scorer. Raw traces and diagnostic scripts are
+ignored local files under `mech-testing/jack-test/aim-trace-*.jsonl`,
+`trace_bot.py`, and `analyze_fights.py`; simulator checkout has no Git metadata.
+
 ## Partial-cover aiming trial
 
 On the aim-only 5.42 builders-4 configuration, `BOT_COVER_AIM=on` tries a
