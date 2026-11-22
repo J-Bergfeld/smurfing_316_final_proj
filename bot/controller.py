@@ -19,8 +19,8 @@ class Controller:
         self.npc_hurt=-100.; self.npc_bearing=None; self.npc_id=None
         self.hurt_bearing=0.
         self.last_aim=[0.,0.]
-        self.recovery_enabled=os.getenv('BOT_SQUAD_RECOVERY','cover')=='cover'
-        self.farming_policy=os.getenv('BOT_SQUAD_FARMING','legacy')
+        self.recovery_enabled=os.getenv('BOT_SQUAD_RECOVERY','legacy')=='cover'
+        self.farming_policy=os.getenv('BOT_SQUAD_FARMING','cubes')
         self.recovery_since=None; self.recovery_cooldown=-100.
 
     def act(self,obs):

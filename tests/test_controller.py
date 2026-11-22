@@ -11,11 +11,11 @@ from test_bot import HELLO, enemy, observation
 
 
 class ControllerTests(unittest.TestCase):
-    def test_squad_recovery_is_enabled_by_default(self):
+    def test_squad_recovery_is_disabled_by_default(self):
         with patch.dict('os.environ', {}, clear=True):
-            self.assertTrue(Controller(HELLO).recovery_enabled)
-        with patch.dict('os.environ', {'BOT_SQUAD_RECOVERY': 'legacy'}):
             self.assertFalse(Controller(HELLO).recovery_enabled)
+        with patch.dict('os.environ', {'BOT_SQUAD_RECOVERY': 'cover'}):
+            self.assertTrue(Controller(HELLO).recovery_enabled)
 
     def test_squad_recovery_holds_fire_and_persists_then_stops(self):
         with patch.dict('os.environ', {'BOT_SQUAD_RECOVERY': 'cover'}):
