@@ -58,6 +58,7 @@ class Controller:
         self.nav_method=os.getenv('BOT_NAV_METHOD','spacing')
         self.recovery_since=None; self.recovery_cooldown=-100.
         self.seen_cells={}; self.roam_cell=None; self.roam_at=-100.
+        self.exploration_cursor=None
         self.hold_goal=None; self.hold_goal_at=-100.; self.hold_goal_zone=None
         self.exposure_hold=os.getenv('BOT_PRESSURE_EXPOSURE_HOLD','1') == '1'
         self.pressure_zone_key=None; self.pressure_zone_goal=None; self.pressure_zone_at=-100.
@@ -70,18 +71,27 @@ class Controller:
         nx=math.ceil((bounds['maxX']-xmin)/32)+1; ny=math.ceil((bounds['maxY']-ymin)/32)+1
         i0=max(0, int((p[0]-150-xmin)/32)); i1=min(nx-1,int((p[0]+150-xmin)/32))
         j0=max(0, int((p[1]-150-ymin)/32)); j1=min(ny-1,int((p[1]+150-ymin)/32))
+        cursor=self.exploration_cursor
+        if cursor and not (i0<=cursor[0]<=i1 and j0<=cursor[1]<=j1): cursor=None
         eye=[p[0],p[1],p[2]+obs['self']['stats'].get('eye_height',8)]
         half=math.radians(self.cfg['vision'].get('fov_deg',120))*.5
-        deadline=getattr(self,'action_deadline',time.perf_counter()+.02)-.006
+        # Exploration is background bookkeeping. Reserve time for decisions and
+        # the protocol response even when many visibility rays are expensive.
+        now=time.perf_counter()
+        deadline=min(getattr(self,'action_deadline',now+.02)-.006,now+.005)
         for j in range(j0,j1+1):
             for i in range(i0,i1+1):
-                if time.perf_counter()>=deadline: return
+                if cursor and (j,i)<(cursor[1],cursor[0]): continue
+                if time.perf_counter()>=deadline:
+                    self.exploration_cursor=(i,j)
+                    return
                 key=(i,j)
                 if self.seen_cells.get(key,-1e6)>t-2: continue
                 x=xmin+(i+.5)*32; y=ymin+(j+.5)*32
                 d=math.hypot(x-p[0],y-p[1])
                 if d>150 or (d>40 and abs(angle_diff(math.atan2(y-p[1],x-p[0]),aim))>half): continue
                 if d<20 or world.shot_clear(eye,[x,y,world.ground(x,y)+2]): self.seen_cells[key]=t
+        self.exploration_cursor=None
 
     def pressure_roam(self, obs, hp):
         """Look for unseen ground while healthy and still gathering cubes."""

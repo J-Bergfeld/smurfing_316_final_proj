@@ -253,6 +253,7 @@ class Arena:
         # Optional coarse exposure cache, tied to the exact arena files.  The
         # navigation fallback remains available for maps with no matching grid.
         self.hold_candidates = None
+        self.hold_candidates_by_component = None
         exposure_path = Path(__file__).with_name('exposure_grid.json.gz')
         if self.baked is not None and use_cache and exposure_path.exists():
             try:
@@ -272,6 +273,10 @@ class Arena:
                             cell=self.cell(x,y); index=cell[1]*grid['nx']+cell[0]
                             candidates.append((x,y,value,cell,grid['clearance'][index],grid['component'][index]))
                     self.hold_candidates=candidates
+                    by_component={}
+                    for candidate in candidates:
+                        by_component.setdefault(candidate[-1],[]).append(candidate)
+                    self.hold_candidates_by_component=by_component
             except (OSError, ValueError, KeyError, TypeError):
                 self.hold_candidates=None
 
@@ -293,10 +298,10 @@ class Arena:
                     grid['component'][previous_index]!=component or not self.free_cell(previous_cell)):
                 previous=None
         best=None; best_score=math.inf
-        for x,y,value,cell,clearance,c in self.hold_candidates:
+        candidates=(self.hold_candidates_by_component or {}).get(component,())
+        for x,y,value,cell,clearance,c in candidates:
             if deadline is not None and time.perf_counter()>=deadline:
                 return previous
-            if c != component: continue
             d=math.hypot(x-pos[0],y-pos[1])
             if d>320: continue
             dn=math.hypot(x-center[0],y-center[1])

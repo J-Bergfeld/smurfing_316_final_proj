@@ -4,7 +4,7 @@ import random
 import time
 import math
 from collections import defaultdict
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from bot.movement import Movement, build_roof_access_graph
 from bot.geometry import Arena
 from bot.navigation import NavigationGraph
@@ -156,6 +156,31 @@ class NavigationTests(unittest.TestCase):
         self.assertGreaterEqual(climb, 6)
         self.assertLessEqual(climb, 40)
 
+    def test_roof_access_cannot_pass_through_adjacent_solid(self):
+        world = Mock()
+        world.bounds = {'minX': 0, 'minY': 0, 'maxX': 48, 'maxY': 48}
+        world.heights = b'test roof with adjacent obstruction'
+        world.baked = {'nx': 25, 'ny': 25}
+        roof = {'kind': 'building', 'top': 20, 'base': 0,
+                'box': [10, 10, 30, 30], 'ring': ()}
+        obstruction = {'kind': 'wall', 'top': 20, 'base': 0}
+        world.prisms = [roof]
+        world.cell.side_effect = lambda x, y: (int(x / 2), int(y / 2))
+        world.cell_pos.side_effect = lambda cell: (cell[0] * 2, cell[1] * 2)
+        world.ground.return_value = 0
+        world.walk_at.return_value = 0
+        world.free_cell.return_value = True
+        world.standable.return_value = True
+        def solids(x, y):
+            if 10 <= x <= 30 and 10 <= y <= 30:
+                return [roof]
+            return [obstruction] if (x, y) == (32, 20) else []
+        world.solids.side_effect = solids
+        graph = build_roof_access_graph(world)
+        self.assertEqual(len(graph), 1)
+        self.assertNotIn(((17, 10), (34, 20), (26, 20), 20), graph[0]['access'])
+        self.assertIn(((17, 9), (34, 18), (26, 18), 20), graph[0]['access'])
+
     def test_roof_graph_reconsiders_approach_after_three_seconds(self):
         world = Mock()
         world.baked = None
@@ -197,6 +222,21 @@ class NavigationTests(unittest.TestCase):
         self.assertEqual(movement.seek_cover(obs, [attacker], deeper=True), [1., 0.])
         chosen = movement.navigate.call_args.args[1]
         self.assertGreaterEqual(math.dist(chosen, attacker['pos'][:2]), 28.)
+
+    def test_cover_search_leaves_time_for_rest_of_action(self):
+        world = Mock()
+        world.shot_clear.return_value = True
+        world.walk_at.return_value = 0
+        world.cell.return_value = (0, 0)
+        world.nearest_free.return_value = (0, 0)
+        movement = Movement(world, HELLO['config'], random.Random(1))
+        movement.action_deadline = 100.005
+        obs = observation(); obs['t'] = 10
+        obs['self']['pos'] = [0, 0, 0]
+        attacker = {'pos': [-10, 0, 0], 'cubes': 0}
+        with patch('bot.movement.time.perf_counter', return_value=100.):
+            self.assertIsNone(movement.seek_cover(obs, [attacker]))
+        world.free_cell.assert_not_called()
 
     def test_roof_plan_accepts_a_different_roof_after_landing(self):
         world = Mock()

@@ -61,6 +61,19 @@ class PressurePolicyTests(unittest.TestCase):
         self.obs['self']['cubes'] = 26
         self.assertIsNone(self.bot.pressure_roam(self.obs, 1.0))
 
+    def test_exploration_resumes_after_its_time_budget(self):
+        self.obs['tick'] = 0
+        self.bot.action_deadline = 100.
+        clock = iter(i * .001 for i in range(100))
+        with patch('bot.controller.time.perf_counter', side_effect=lambda: next(clock)):
+            self.bot.mark_exploration(self.obs)
+            first = self.bot.exploration_cursor
+            self.assertIsNotNone(first)
+            self.bot.mark_exploration(self.obs)
+            second = self.bot.exploration_cursor
+        self.assertIsNotNone(second)
+        self.assertGreater((second[1], second[0]), (first[1], first[0]))
+
     def test_pressure_idle_tracks_recent_sound_then_resumes_scan(self):
         self.bot.decision_policy = 'pressure'
         self.bot.tracks = {}

@@ -7,6 +7,7 @@ from .geometry import distance, angle_diff
 
 
 _ROOF_GRAPH_CACHE = {}
+_STEER_DIRECTIONS = tuple((math.cos(i*math.pi/4), math.sin(i*math.pi/4)) for i in range(8))
 
 
 def build_roof_access_graph(world):
@@ -19,6 +20,12 @@ def build_roof_access_graph(world):
     if signature in _ROOF_GRAPH_CACHE:
         return _ROOF_GRAPH_CACHE[signature]
     grid=world.baked; nx=grid['nx']; ny=grid['ny']; graph=[]
+    solid_cells={}
+    def solid_cell(cell):
+        if cell not in solid_cells:
+            x,y=world.cell_pos(cell); ground=world.ground(x,y)
+            solid_cells[cell]=any(p['base']<=ground+.3 and p['top']>ground+1.5 for p in world.solids(x,y))
+        return solid_cells[cell]
     for ident,prism in enumerate(world.prisms):
         if prism['kind']!='building': continue
         x0,y0,x1,y1=prism['box']
@@ -52,10 +59,14 @@ def build_roof_access_graph(world):
             for di,dj in ((1,0),(-1,0),(0,1),(0,-1)):
                 outside=(i+di,j+dj); edge=(i-di*2,j-dj*2)
                 if outside in cells or edge not in cells: continue
+                # A neighbouring solid roof is a wall, not open air from
+                # which this roof can be climbed.
+                if not (0<=outside[0]<nx and 0<=outside[1]<ny): continue
+                if solid_cell(outside): continue
                 for step in (2,3):
                     ground=(i+di*step,j+dj*step)
                     if not (0<=ground[0]<nx and 0<=ground[1]<ny): break
-                    if ground in cells: break
+                    if solid_cell(ground): break
                     if world.free_cell(ground):
                         gp=world.cell_pos(ground); ep=world.cell_pos(edge)
                         climb=top-world.walk_at(*gp)
@@ -216,12 +227,15 @@ class Movement:
                     if self.roof_bans.get(roof['id'],0)>now: continue
                     if math.dist(roof['inside'],zone['next_center'])>=zone['next_radius']-8: continue
                     if math.dist(roof['inside'],pos[:2])>260+math.sqrt(len(roof['cells'])*4): continue
+                    preference=40 if previous and roof['id']==previous['id'] else 0
                     for cell,ground,edge,climb in roof['access']:
                         if climb>limit or (grid and component is not None and grid['component'][cell[1]*grid['nx']+cell[0]]!=component): continue
-                        if not world.free_cell(cell): continue
+                        # Skip points that cannot beat the best even on one axis.
+                        if abs(ground[0]-pos[0])>=best_score+preference or abs(ground[1]-pos[1])>=best_score+preference: continue
                         d=math.dist(pos[:2],ground)
-                        score=d-(40 if previous and roof['id']==previous['id'] else 0)
+                        score=d-preference
                         if score>=best_score: continue
+                        if not world.free_cell(cell): continue
                         best_score=score
                         best_distance=d
                         best={'id':roof['id'],'ground':ground,'edge':edge,'inside':roof['inside'],
@@ -532,8 +546,9 @@ class Movement:
         speed=stats.get('boost_speed',19.5) if boost and grounded else stats.get('walk_speed',11.7)
         if any(w and w['kind']=='laser' and w.get('charge',0)>0 for w in me.get('weapons',[])):
             speed*=stats.get('charge_move_mult',.5)
-        choices=[(0.,0.)]+[(math.cos(i*math.pi/4),math.sin(i*math.pi/4)) for i in range(8)]+[desired]
+        choices=((0.,0.),)+_STEER_DIRECTIONS+(desired,)
         best=(float('-inf'),(0.,0.)); previous=self.pressure_last_move
+        zone_distance=math.dist(p[:2],zone['center'])
         ground_level=grounded and abs(p[2]-self.world.walk_at(*p[:2]))<3.5
         start_cell=self.world.cell(*p[:2]) if ground_level else None
         start_free=self.world.free_cell(start_cell) if ground_level else False
@@ -570,9 +585,9 @@ class Movement:
             px,py=progress or (x,y)
             score=((px-p[0])*desired[0]+(py-p[1])*desired[1])*1.6-penalty
             if blocked: score-=3
-            now=math.dist(p[:2],zone['center']); end=math.dist((px,py),zone['center'])
-            if now < zone['radius']-.5 and end>zone['radius']-4 and end>now:
-                score-=8*(end-now)
+            end=math.dist((px,py),zone['center'])
+            if zone_distance < zone['radius']-.5 and end>zone['radius']-4 and end>zone_distance:
+                score-=8*(end-zone_distance)
             if dx or dy: score+=.25*(dx*previous[0]+dy*previous[1])
             if score>best[0]: best=(score,(dx,dy))
         self.pressure_last_move=best[1]
@@ -628,6 +643,10 @@ class Movement:
         if self.cover is not None and now-self.cover_at<.4:
             return self.navigate(me,self.cover,now) if math.dist(self.cover,p[:2])>=1.5 else [0.,0.]
         self.cover_at=now
+        eyes=[]
+        for actor in threats:
+            ap=actor['pos']; scale=1+actor.get('cubes',0)*self.cfg['cubes'].get('size_per_cube',.05)
+            eyes.append((ap[0],ap[1],ap[2]+self.cfg['mech']['eye_height']*scale))
         def penalty(x,y):
             cur=math.hypot(x-zone['center'][0],y-zone['center'][1])-zone['radius']
             nxt=math.hypot(x-zone['next_center'][0],y-zone['next_center'][1])-zone['next_radius']
@@ -636,9 +655,7 @@ class Movement:
             return value
         def hidden(x,y):
             ground=self.world.walk_at(x,y); height=me['stats']['height']
-            for actor in threats:
-                ap=actor['pos']; scale=1+actor.get('cubes',0)*self.cfg['cubes'].get('size_per_cube',.05)
-                eye=(ap[0],ap[1],ap[2]+self.cfg['mech']['eye_height']*scale)
+            for eye in eyes:
                 if self.world.shot_clear(eye,(x,y,ground+height)) or self.world.shot_clear(eye,(x,y,ground+height*.5)): return False
             return True
         current_hidden=hidden(*p[:2]) and penalty(*p[:2])==0
@@ -649,7 +666,9 @@ class Movement:
         start=self.world.nearest_free(self.world.cell(*p[:2]))
         if start is None: self.cover=None; return None
         queue=deque([(start,0)]); visited={start}; best=None; best_score=math.inf; checked=0
-        deadline=min(self.action_deadline,time.perf_counter()+.030)
+        # Leave time for route selection and the rest of the action after this
+        # search; a single ray test can also run beyond the loop's deadline.
+        deadline=min(self.action_deadline-.006,time.perf_counter()+.020)
         while queue and checked<350 and time.perf_counter()<deadline:
             cell,steps=queue.popleft()
             if steps>50 or (best is not None and steps*2>best_score+30): break
