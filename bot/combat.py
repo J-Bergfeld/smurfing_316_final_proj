@@ -263,6 +263,28 @@ def assess_combat(state, obs, squad, late, hp):
         if closing>3: cost-=15
         choices.append((cost,a['id'],a))
     target=min(choices,default=(0,0,None))[2]
+    # Make a narrow exception to target persistence for an immediate, visible
+    # close attacker. Keep the current target when it is already near death.
+    if (squad and getattr(state,'close_threat_switch',False) and target
+            and target['id']==state.target_id and t-state.target_at<2
+            and math.dist(p[:2],target['pos'][:2])>120
+            and target.get('hp',1400)>max(200,.3*target.get('max_hp',1400))):
+        close=[]
+        for tr in state.tracks.values():
+            actor=tr['actor']
+            if (actor['kind']!='mech' or actor['id']==target['id']
+                    or tr['seen']!=t or not tr['los']):
+                continue
+            d=math.dist(p[:2],actor['pos'][:2])
+            if d>=55:
+                continue
+            bearing=math.atan2(p[1]-actor['pos'][1],p[0]-actor['pos'][0])
+            aimed=abs(angle_diff(actor['aim'][0],bearing))<.22
+            recent=0<=t-state.hits.get(actor['id'],-100)<2
+            if recent or (aimed and actor.get('weapons')):
+                close.append((d,actor['id'],actor))
+        if close:
+            target=min(close,key=lambda item:(item[0],item[1]))[2]
     foe=target or (min(hidden,default=(0,0,None))[2] if not squad else None)
     if target: state.target_id=target['id']; state.target_at=t
     if danger or t-state.last_hurt<3: state.last_threat=t

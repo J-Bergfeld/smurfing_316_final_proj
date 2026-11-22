@@ -28,6 +28,47 @@ class AggressiveCombatTests(unittest.TestCase):
         self.track(healthy); self.track(weak, los=False)
         self.assertIs(self.bot.assess_combat(self.obs, True, False, 1)[1], healthy)
 
+    def test_close_attacker_can_interrupt_distant_target(self):
+        far = enemy(180)
+        close = enemy(50); close['id'] = 8
+        self.track(far); self.track(close)
+        self.bot.target_id = far['id']; self.bot.target_at = 9.9
+        self.bot.close_threat_switch = True
+        self.assertIs(self.bot.assess_combat(self.obs, True, False, 1)[1], close)
+
+    def test_close_attacker_does_not_interrupt_near_lethal_target(self):
+        far = enemy(180); far['hp'] = 400
+        close = enemy(50); close['id'] = 8
+        self.track(far); self.track(close)
+        self.bot.target_id = far['id']; self.bot.target_at = 9.9
+        self.bot.close_threat_switch = True
+        self.assertIs(self.bot.assess_combat(self.obs, True, False, 1)[1], far)
+
+    def test_close_switch_requires_visible_current_threat(self):
+        far = enemy(180)
+        close = enemy(50); close['id'] = 8; close['aim'] = [0, 0]
+        self.track(far); self.track(close)
+        self.bot.target_id = far['id']; self.bot.target_at = 9.9
+        self.bot.close_threat_switch = True
+        self.assertIs(self.bot.assess_combat(self.obs, True, False, 1)[1], far)
+        close['aim'] = [3.141592653589793, 0]
+        self.bot.tracks[close['id']]['los'] = False
+        self.assertIs(self.bot.assess_combat(self.obs, True, False, 1)[1], far)
+        self.bot.tracks[close['id']]['los'] = True
+        self.bot.tracks[close['id']]['seen'] = 9.9
+        self.assertIs(self.bot.assess_combat(self.obs, True, False, 1)[1], far)
+
+    def test_close_switch_uses_recent_damage_and_respects_flag(self):
+        far = enemy(180)
+        close = enemy(50); close['id'] = 8; close['aim'] = [0, 0]
+        self.track(far); self.track(close)
+        self.bot.target_id = far['id']; self.bot.target_at = 9.9
+        self.bot.hits[close['id']] = 9.5
+        self.bot.close_threat_switch = False
+        self.assertIs(self.bot.assess_combat(self.obs, True, False, 1)[1], far)
+        self.bot.close_threat_switch = True
+        self.assertIs(self.bot.assess_combat(self.obs, True, False, 1)[1], close)
+
     def test_retreat_starts_earlier_and_persists_after_threat_leaves(self):
         first = enemy(80); second = enemy(100); second['id'] = 8
         self.track(first); self.track(second)

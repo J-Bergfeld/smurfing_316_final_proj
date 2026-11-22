@@ -26,6 +26,7 @@ class Controller:
         self.hurt_bearing=0.
         self.last_aim=[0.,0.]
         self.corner_duel = os.getenv('BOT_CORNER_DUEL') == '1'
+        self.close_threat_switch = os.getenv('BOT_CLOSE_THREAT_SWITCH') == '1'
         self.approach_boost = os.getenv('BOT_APPROACH_BOOST') == '1'
         self.supply_drops = os.getenv('BOT_SUPPLY_DROPS', '1') == '1'
         self.slot = hello['slot']
