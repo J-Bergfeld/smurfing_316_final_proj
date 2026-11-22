@@ -2,6 +2,39 @@
 
 Practice scores are mean placement points; local simulator results are hypotheses, not official predictions. The current priority is improving practice placement to qualify. [Practice implementation plan](practice-improvement-plan.md) · [Historical experiments and calibration](experiments-history.md) · [Simulator limitations](simulator.md).
 
+## Split finish and retreat; aim timing
+
+The submission candidate enables `BOT_FINISH_PRIORITY=on` by itself. It retains
+the aim-only package's `BOT_AIM_MODEL=dev`, `BOT_RELOAD_MODEL=sam`, supply drops
+off, and explicitly leaves `BOT_SAFE_RETREAT=off` and `BOT_GUN_TIMING=current`.
+The pre-existing combined finish-and-retreat policy scored 4.77 on builders-4
+versus 5.42 for the aim-only entry; independent official seeds cannot isolate
+either feature. This submission tests finish priority without the retreat rule.
+
+The previous agent's running-panel artifacts were not present in this workspace.
+New counterbalanced squad-proxy screens use frozen inputs and simulator hashes;
+they do not establish official performance. The control matches the 5.42
+configuration in effective settings, but runs on the newer Jack source with
+experimental features off, not the exact old commit.
+
+| Screen | Seeds | Control | Candidate | Paired delta; 95% bootstrap interval | Late/invalid, control vs candidate |
+| --- | --- | ---: | ---: | --- | --- |
+| Finish priority only | 422760–422775 | 4.3125 | 4.4375 | +0.125; [0, 0.3125] | 3/3 vs 2/2 |
+| Safe retreat only | 422760–422775 | 4.3125 | 4.375 | +0.0625; [−0.125, 0.25] | 3/3 vs 4/4 |
+| Gun timing next tick | 422780–422795 | 5.1875 | 3.75 | −1.4375; [−2.75, −0.3125] | 5/5 vs 0/0 |
+
+Fourteen of sixteen finish pairs tied; both observed gains were one point.
+The result is weak and timing-sensitive; it does not demonstrate an official
+gain. The aim-timing screen suggests a local regression, but different late
+counts and proxy physics limit attribution. Keep aim timing and safe retreat
+off. Full local reports: [split](jack-split-422760.json) and
+[aim timing](jack-aim-timing-422780.json); full frozen evidence remains in
+temporary `/tmp/jack-split-422760` and `/tmp/jack-aim-timing-422780`.
+The 117-test full suite and five focused tactical tests passed. A host protocol
+replay with the candidate settings answered 300/300 observations on time
+(28.6 ms maximum while other tests were running). Docker's daemon was
+unavailable, so the restricted linux/amd64 container check was not performed.
+
 ## Finishable attacker and safety screen
 
 Relative to the 5.42 aim-only settings, `BOT_TARGET_POLICY=finish` favors

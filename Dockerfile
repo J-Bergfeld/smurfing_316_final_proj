@@ -16,7 +16,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     BOT_COVER_AIM=off \
     BOT_TARGET_POLICY=baseline \
     BOT_DUEL_SAFETY=off \
-    BOT_FINISH_PRIORITY=off \
+    BOT_FINISH_PRIORITY=on \
     BOT_SAFE_RETREAT=off \
     BOT_GUN_TIMING=current
 ENTRYPOINT ["python3", "-u", "/bot/main.py"]

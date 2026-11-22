@@ -1,0 +1,235 @@
+{
+  "stage": "screen",
+  "builds": {
+    "A": "05715b5abb64cd8e417c18d8e8f475c5089bf0069639c2303b9f8fdb99ad3214",
+    "B": "17cc23f282db9e13c02f55163632ef6ee37ed3679e3ce50c4db4dd6c7cfa905b",
+    "C": "5c80aa038664ed5dd43685894dae6821d3de3f610bac48f5c3939599c42e70b6"
+  },
+  "context": {
+    "sim": "71f4e70796d5b20777951d0317edf4bdfaf76fc1fdfc8dff50dc5281e4517be8",
+    "kit": "023ed220514f29dda9389ccd4643625ffc7aa494569d18c28098553bb2a315bc",
+    "tools": "453da278ff0775ca7f46f2b3680984c7552ca05c34d3d6240785cd0cc471abc6"
+  },
+  "spec": {
+    "A": {
+      "root": "..",
+      "env": {
+        "BOT_POLICY": "integrated",
+        "BOT_NAV_METHOD": "legacy",
+        "BOT_GUN_AIM_CHECK": "actual",
+        "BOT_SUPPLY_DROPS": "0",
+        "BOT_CORNER_DUEL": "1",
+        "BOT_POSITIONAL_FIELD": "1",
+        "BOT_FINISH_APPROACH": "0",
+        "BOT_RELOAD_COVER": "0",
+        "BOT_AIM_MODEL": "dev",
+        "BOT_RELOAD_MODEL": "sam",
+        "BOT_COVER_AIM": "off",
+        "BOT_TARGET_POLICY": "baseline",
+        "BOT_DUEL_SAFETY": "off",
+        "BOT_FINISH_PRIORITY": "off",
+        "BOT_SAFE_RETREAT": "off",
+        "BOT_GUN_TIMING": "current"
+      },
+      "hypothesis": "Aim-only control, independent factors off"
+    },
+    "B": {
+      "root": "..",
+      "env": {
+        "BOT_POLICY": "integrated",
+        "BOT_NAV_METHOD": "legacy",
+        "BOT_GUN_AIM_CHECK": "actual",
+        "BOT_SUPPLY_DROPS": "0",
+        "BOT_CORNER_DUEL": "1",
+        "BOT_POSITIONAL_FIELD": "1",
+        "BOT_FINISH_APPROACH": "0",
+        "BOT_RELOAD_COVER": "0",
+        "BOT_AIM_MODEL": "dev",
+        "BOT_RELOAD_MODEL": "sam",
+        "BOT_COVER_AIM": "off",
+        "BOT_TARGET_POLICY": "baseline",
+        "BOT_DUEL_SAFETY": "off",
+        "BOT_FINISH_PRIORITY": "on",
+        "BOT_SAFE_RETREAT": "off",
+        "BOT_GUN_TIMING": "current"
+      },
+      "hypothesis": "Prefer a finishable attacker"
+    },
+    "C": {
+      "root": "..",
+      "env": {
+        "BOT_POLICY": "integrated",
+        "BOT_NAV_METHOD": "legacy",
+        "BOT_GUN_AIM_CHECK": "actual",
+        "BOT_SUPPLY_DROPS": "0",
+        "BOT_CORNER_DUEL": "1",
+        "BOT_POSITIONAL_FIELD": "1",
+        "BOT_FINISH_APPROACH": "0",
+        "BOT_RELOAD_COVER": "0",
+        "BOT_AIM_MODEL": "dev",
+        "BOT_RELOAD_MODEL": "sam",
+        "BOT_COVER_AIM": "off",
+        "BOT_TARGET_POLICY": "baseline",
+        "BOT_DUEL_SAFETY": "off",
+        "BOT_FINISH_PRIORITY": "off",
+        "BOT_SAFE_RETREAT": "on",
+        "BOT_GUN_TIMING": "current"
+      },
+      "hypothesis": "Retreat at low HP against multiple hunters"
+    }
+  },
+  "seed_start": 422760,
+  "seeds": 16,
+  "compile_seconds": 0.739842542,
+  "geometry_sha256": "e83195709df89f1c926a2640b59d207d3291cecfc24895c8ffd750385cd2e483",
+  "parent_report_sha256": null,
+  "summaries": {
+    "A": {
+      "mean": 4.3125,
+      "matches": 16,
+      "kills": 1.8125,
+      "survival_s": 152.0375,
+      "late": 3,
+      "invalid": 3
+    },
+    "B": {
+      "mean": 4.4375,
+      "matches": 16,
+      "kills": 1.9375,
+      "survival_s": 153.334375,
+      "late": 2,
+      "invalid": 2
+    },
+    "C": {
+      "mean": 4.375,
+      "matches": 16,
+      "kills": 1.875,
+      "survival_s": 165.71875,
+      "late": 4,
+      "invalid": 4
+    }
+  },
+  "comparisons": {
+    "B-A": {
+      "delta": 0.125,
+      "median": 0.0,
+      "sd": 0.3415650255319866,
+      "se": 0.08539125638299665,
+      "pairs": 16,
+      "win_fraction": 0.125,
+      "per_seed": {
+        "422760": 0,
+        "422761": 0,
+        "422762": 0,
+        "422763": 0,
+        "422764": 0,
+        "422765": 0,
+        "422766": 1,
+        "422767": 0,
+        "422768": 0,
+        "422769": 0,
+        "422770": 0,
+        "422771": 0,
+        "422772": 0,
+        "422773": 1,
+        "422774": 0,
+        "422775": 0
+      },
+      "bootstrap95": [
+        0,
+        0.3125
+      ],
+      "worst_regressions": [],
+      "mean_metric_deltas": {
+        "kills": 0.125,
+        "game_seconds": 1.2968750000000009,
+        "terminal_cubes": -0.0625,
+        "incoming_damage": 21.607531165575452
+      }
+    },
+    "C-A": {
+      "delta": 0.0625,
+      "median": 0.0,
+      "sd": 0.4425306015783918,
+      "se": 0.11063265039459795,
+      "pairs": 16,
+      "win_fraction": 0.125,
+      "per_seed": {
+        "422760": 0,
+        "422761": 1,
+        "422762": 0,
+        "422763": 0,
+        "422764": 0,
+        "422765": 0,
+        "422766": 0,
+        "422767": 0,
+        "422768": 0,
+        "422769": 0,
+        "422770": 0,
+        "422771": -1,
+        "422772": 0,
+        "422773": 1,
+        "422774": 0,
+        "422775": 0
+      },
+      "bootstrap95": [
+        -0.125,
+        0.25
+      ],
+      "worst_regressions": [
+        [
+          422771,
+          -1
+        ]
+      ],
+      "mean_metric_deltas": {
+        "kills": 0.0625,
+        "game_seconds": 13.681249999999997,
+        "terminal_cubes": 0.0625,
+        "incoming_damage": 199.25025000000016
+      }
+    },
+    "B-C": {
+      "delta": 0.0625,
+      "median": 0.0,
+      "sd": 0.4425306015783918,
+      "se": 0.11063265039459795,
+      "pairs": 16,
+      "win_fraction": 0.125,
+      "per_seed": {
+        "422760": 0,
+        "422761": -1,
+        "422762": 0,
+        "422763": 0,
+        "422764": 0,
+        "422765": 0,
+        "422766": 1,
+        "422767": 0,
+        "422768": 0,
+        "422769": 0,
+        "422770": 0,
+        "422771": 1,
+        "422772": 0,
+        "422773": 0,
+        "422774": 0,
+        "422775": 0
+      },
+      "bootstrap95": [
+        -0.125,
+        0.25
+      ],
+      "worst_regressions": [
+        [
+          422761,
+          -1
+        ]
+      ],
+      "mean_metric_deltas": {
+        "kills": 0.0625,
+        "game_seconds": -12.384374999999995,
+        "terminal_cubes": -0.125,
+        "incoming_damage": -177.64271883442473
+      }
+    }
+  }
+}

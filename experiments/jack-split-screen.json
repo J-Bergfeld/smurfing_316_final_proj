@@ -1,0 +1,68 @@
+{
+  "A": {
+    "root": "..",
+    "env": {
+      "BOT_POLICY": "integrated",
+      "BOT_NAV_METHOD": "legacy",
+      "BOT_GUN_AIM_CHECK": "actual",
+      "BOT_SUPPLY_DROPS": "0",
+      "BOT_CORNER_DUEL": "1",
+      "BOT_POSITIONAL_FIELD": "1",
+      "BOT_FINISH_APPROACH": "0",
+      "BOT_RELOAD_COVER": "0",
+      "BOT_AIM_MODEL": "dev",
+      "BOT_RELOAD_MODEL": "sam",
+      "BOT_COVER_AIM": "off",
+      "BOT_TARGET_POLICY": "baseline",
+      "BOT_DUEL_SAFETY": "off",
+      "BOT_FINISH_PRIORITY": "off",
+      "BOT_SAFE_RETREAT": "off",
+      "BOT_GUN_TIMING": "current"
+    },
+    "hypothesis": "Aim-only control, independent factors off"
+  },
+  "B": {
+    "root": "..",
+    "env": {
+      "BOT_POLICY": "integrated",
+      "BOT_NAV_METHOD": "legacy",
+      "BOT_GUN_AIM_CHECK": "actual",
+      "BOT_SUPPLY_DROPS": "0",
+      "BOT_CORNER_DUEL": "1",
+      "BOT_POSITIONAL_FIELD": "1",
+      "BOT_FINISH_APPROACH": "0",
+      "BOT_RELOAD_COVER": "0",
+      "BOT_AIM_MODEL": "dev",
+      "BOT_RELOAD_MODEL": "sam",
+      "BOT_COVER_AIM": "off",
+      "BOT_TARGET_POLICY": "baseline",
+      "BOT_DUEL_SAFETY": "off",
+      "BOT_FINISH_PRIORITY": "on",
+      "BOT_SAFE_RETREAT": "off",
+      "BOT_GUN_TIMING": "current"
+    },
+    "hypothesis": "Prefer a finishable attacker"
+  },
+  "C": {
+    "root": "..",
+    "env": {
+      "BOT_POLICY": "integrated",
+      "BOT_NAV_METHOD": "legacy",
+      "BOT_GUN_AIM_CHECK": "actual",
+      "BOT_SUPPLY_DROPS": "0",
+      "BOT_CORNER_DUEL": "1",
+      "BOT_POSITIONAL_FIELD": "1",
+      "BOT_FINISH_APPROACH": "0",
+      "BOT_RELOAD_COVER": "0",
+      "BOT_AIM_MODEL": "dev",
+      "BOT_RELOAD_MODEL": "sam",
+      "BOT_COVER_AIM": "off",
+      "BOT_TARGET_POLICY": "baseline",
+      "BOT_DUEL_SAFETY": "off",
+      "BOT_FINISH_PRIORITY": "off",
+      "BOT_SAFE_RETREAT": "on",
+      "BOT_GUN_TIMING": "current"
+    },
+    "hypothesis": "Retreat at low HP against multiple hunters"
+  }
+}
