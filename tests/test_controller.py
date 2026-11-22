@@ -11,6 +11,19 @@ from test_bot import HELLO, enemy, observation
 
 
 class ControllerTests(unittest.TestCase):
+    def test_squad_position_seeks_cover_from_aimed_laser(self):
+        with patch.dict('os.environ', {'BOT_SQUAD_POSITION':'cover', 'BOT_SQUAD_RECOVERY':'legacy'}):
+            bot=Controller(HELLO)
+        obs=observation(); obs.update(t=21,tick=2)
+        foe=enemy(100); foe['charging']=True; foe['aim']=[3.141592653589793,0]
+        bot.update_world=Mock()
+        bot.assess_combat=Mock(return_value=([foe],foe,foe,True,False))
+        bot.movement=Mock(); bot.movement.unstuck_until=0
+        bot.movement.avoid_shells.return_value=None
+        bot.movement.combat_move.return_value=[0,0]
+        bot.act(obs)
+        self.assertEqual(bot.movement.combat_move.call_args.args[4],-1.6)
+
     def test_squad_recovery_is_disabled_by_default(self):
         with patch.dict('os.environ', {}, clear=True):
             self.assertFalse(Controller(HELLO).recovery_enabled)

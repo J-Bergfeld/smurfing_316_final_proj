@@ -66,6 +66,10 @@ The previous [shared-torso gun-aim experiment](experiments-history.md#candidate-
 
 ## Operating loop
 
+### Pending official positioning candidate
+
+The second planned submission returns farming and recovery to `legacy` and enables `BOT_SQUAD_POSITION=cover` by default. In squad combat it seeks cover from an aimed charging laser when our beam is not hot and considers secondary-weapon readiness instead of treating any laser or lightning as ready. Hypothesis: reduce incoming fire while unable to deal effective damage. Risk: hiding can reduce our own damage or delay kills; local score unknown. The protocol replay passed with one late reply on this host. Compare its official result with the 5.17 baseline, allowing for timing noise. The preceding cube-restraint commit should be submitted separately before this one.
+
 1. Start from a specific trace, official result, or protocol mechanic. State the tactical alternative, affected situations, expected placement mechanism, counter-hypothesis, and where simulator behavior may not transfer.
 2. Challenge the premise in a second reasoning pass. Select a small discriminating scenario and define the decision before looking at results. Prioritize expected placement impact, frequency, transferability, cost, and uncertainty.
 3. Run the scenario and screen candidate versus parent on paired **squad-proxy** seeds, starting with 16–32 pairs where feasible. Expand close or consequential comparisons, rotate validation seeds, inspect traces and late/invalid actions, and repeat control against itself to estimate timing noise. The runner executes all seeds of one variant before the next; account for order and machine load. Equal seeds do not make divergent matches identical.

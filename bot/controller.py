@@ -20,7 +20,8 @@ class Controller:
         self.hurt_bearing=0.
         self.last_aim=[0.,0.]
         self.recovery_enabled=os.getenv('BOT_SQUAD_RECOVERY','legacy')=='cover'
-        self.farming_policy=os.getenv('BOT_SQUAD_FARMING','cubes')
+        self.farming_policy=os.getenv('BOT_SQUAD_FARMING','legacy')
+        self.squad_cover=os.getenv('BOT_SQUAD_POSITION','cover')=='cover'
         self.recovery_since=None; self.recovery_cooldown=-100.
 
     def act(self,obs):
@@ -61,9 +62,12 @@ class Controller:
             distance=math.dist(p[:2],foe['pos'][:2]); gun=next((w for w in me['weapons'] if w and w['kind']=='gun'),None); laser_weapon=next((w for w in me['weapons'] if w and w['kind']=='laser'),None)
             ready=bool(gun and gun['ammo']>0 and gun['reload']<=.25 and distance<=gun['stats']['range']-10)
             hot=bool(laser_weapon and laser_weapon['charge']>=laser_weapon['stats']['charge']-.3 and distance<=laser_weapon['stats']['range']-5)
-            if hot or (squad and any(w and w['kind'] in ('laser','lightning') for w in me['weapons'])): ready=True
+            if hot or (squad and not self.squad_cover and any(w and w['kind'] in ('laser','lightning') for w in me['weapons'])): ready=True
+            if squad and self.squad_cover:
+                lightning=next((w for w in me['weapons'] if w and w['kind']=='lightning'),None)
+                if lightning and me['energy']>=lightning['stats']['energy'] and distance<lightning['stats']['range']-1.5: ready=True
             want_los=1 if ready else -1
-            if not squad and not hot and any(a.get('charging') and abs(angle_diff(a['aim'][0],math.atan2(p[1]-a['pos'][1],p[0]-a['pos'][0])))<.3 for a in seen): want_los=-1.6
+            if (not squad or self.squad_cover) and not hot and any(a.get('charging') and abs(angle_diff(a['aim'][0],math.atan2(p[1]-a['pos'][1],p[0]-a['pos'][0])))<.3 for a in seen): want_los=-1.6
             action['move']=self.movement.combat_move(obs,foe,seen,squad,want_los,self.items); mode='fight'
             if squad and not (self.farming_policy in ('selective','cubes') and danger):
                 radius=70 if hp>.5 else 70*.57
