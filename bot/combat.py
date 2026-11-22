@@ -155,8 +155,33 @@ def lead(muzzle, target, velocity, speed, grounded):
         travel = max(0., math.dist((x,y,z),muzzle)-3.)/speed
     return math.atan2(y-muzzle[1],x-muzzle[0]), math.atan2(z-muzzle[2],math.hypot(x-muzzle[0],y-muzzle[1]))
 
-def mortar_solution(world,tube,foot,velocity,speed,gravity,stats):
+def mortar_solution(world,tube,foot,velocity,speed,gravity,stats,pressure=False):
     if speed<=0 or gravity<=0: return None
+    if pressure:
+        # Try the lower trajectory first, then an elevated arc if an obstacle
+        # blocks it. Lead is damped as flight time grows.
+        for high_arc in (False, True):
+            duration=.6
+            for _ in range(5):
+                damp=max(.95,1-max(0,duration-.3)*.1)
+                x=foot[0]+velocity[0]*(.075+duration*damp)
+                y=foot[1]+velocity[1]*(.075+duration*damp)
+                distance=math.hypot(x-tube[0],y-tube[1]); height=foot[2]+.3-tube[2]
+                disc=speed**4-gravity*(gravity*distance*distance+2*height*speed*speed)
+                if disc<0 or distance<1: break
+                pitch=math.atan2(speed*speed+(1 if high_arc else -1)*math.sqrt(disc),gravity*distance)
+                if math.cos(pitch)<.05: break
+                duration=distance/(speed*math.cos(pitch))
+            else:
+                if not stats['min_pitch']<=pitch<=stats['max_pitch'] or duration>6.7: continue
+                yaw=math.atan2(y-tube[1],x-tube[0]); steps=int(duration/.12)+2
+                clear=True
+                for step in range(1,steps):
+                    t=duration*step/steps; d=speed*math.cos(pitch)*t
+                    if world.solid(tube[0]+math.cos(yaw)*d,tube[1]+math.sin(yaw)*d,tube[2]+speed*math.sin(pitch)*t-.5*gravity*t*t):
+                        clear=False; break
+                if clear: return yaw,pitch
+        return None
     duration=0.
     for _ in range(3):
         x=foot[0]+velocity[0]*(.075+duration); y=foot[1]+velocity[1]*(.075+duration)
@@ -173,7 +198,7 @@ def mortar_solution(world,tube,foot,velocity,speed,gravity,stats):
         t+=.1
     return yaw,pitch
 
-def aim_and_fire(me, target, config, squad=False, world=None):
+def aim_and_fire(me, target, config, squad=False, world=None, pressure=False, allow_fire=True):
     """Aim at an already selected, shootable target and set weapon triggers.
 
     The caller chooses targets, verifies visibility, and manages charging
@@ -185,29 +210,66 @@ def aim_and_fire(me, target, config, squad=False, world=None):
     elif kind=='npc': radius,height=config['npc']['radius'],config['npc']['height']
     else: radius,height=config['crates']['radius'],config['crates']['height']
     use_dev_aim=os.getenv('BOT_AIM_MODEL','sam') == 'dev'
-    muzzle=(p[0]+vel[0]*.075,p[1]+vel[1]*.075,p[2]+st['muzzle_height'])
-    gun_muzzle=(p[0],p[1],p[2]+st['muzzle_height']) if use_dev_aim else muzzle
+    muzzle=(p[0]+vel[0]*.075,p[1]+vel[1]*.075,p[2]+st['muzzle_height']+(vel[2]*.075 if pressure and not me.get('grounded',True) else 0))
+    gun_muzzle=(p[0],p[1],p[2]+st['muzzle_height']) if use_dev_aim and not pressure else muzzle
     center=(pos[0],pos[1],pos[2]+height*.5); dist=math.hypot(center[0]-p[0],center[1]-p[1])
+    if pressure: dist=math.dist(muzzle, center)
     weapons=me['weapons']; gun=next((w for w in weapons if w and w['kind']=='gun'),None)
-    gun_point=intercept(gun_muzzle,center,tv,gun['stats']['speed']) if gun and use_dev_aim else None
+    # Account for input latency; the pressure policy tracks the target's
+    # near-term position rather than extrapolating its entire bullet flight.
+    gun_point=tuple(center[i]+tv[i]*.075 if i < 2 else center[i] for i in range(3)) if gun and pressure else (intercept(gun_muzzle,center,tv,gun['stats']['speed']) if gun and use_dev_aim else None)
     gy,gp=aim_at(gun_muzzle,gun_point) if gun_point is not None else (lead(muzzle,center,tv,gun['stats']['speed'],abs(tv[2])<.5) if gun else (0.,0.))
-    dx=center[0]+tv[0]*.125-muzzle[0]; dy=center[1]+tv[1]*.125-muzzle[1]
+    latency=.075 if pressure else .125
+    dx=center[0]+tv[0]*latency-muzzle[0]; dy=center[1]+tv[1]*latency-muzzle[1]
     hy,hp=math.atan2(dy,dx),math.atan2(center[2]-muzzle[2],math.hypot(dx,dy))
+    beam_clear = True
+    if pressure and callable(getattr(world, 'shot_clear', None)) and any(w and w['kind'] in ('laser', 'lightning') for w in me['weapons']):
+        beam_clear = world.shot_clear(muzzle, (center[0]+tv[0]*latency, center[1]+tv[1]*latency, center[2]))
     aim=[gy,gp] if gun else [hy,hp]; fire=[False,False]
-    tol_y=math.atan2(radius*.75,max(dist,1)); tol_p=math.atan2(height*.4,max(dist,1))
+    laser=next((w for w in weapons if w and w['kind']=='laser'),None)
+    laser_ready=False
+    if pressure and laser and laser.get('charge',0)>0:
+        ls=laser['stats']; charge=laser['charge']; full=ls['charge']
+        damage=ls['damage']*(ls['min_frac']+(1-ls['min_frac'])*min(1,(charge+.1)/full))
+        damage*=1+config['cubes']['damage_per_cube']*min(me['cubes'],config['cubes']['stat_cap'])
+        laser_ready=charge>=full-.16 or damage>=target.get('hp',math.inf)
+    tol_y=math.atan2(radius*(2.2 if pressure else .75),max(dist,1))
+    tol_p=math.atan2(height*(.72 if pressure else .4),max(dist,1))
     actual=me['aim']; ey=lambda y:abs(angle_diff(y,actual[0])); ep=lambda x:abs(x-actual[1])
     for i,w in enumerate(weapons[:2]):
         if not w: continue
         s=w['stats']; wk=w['kind']
         if wk=='gun':
-            fire[i]=bool(dist<=s['range']*.96 and w.get('ammo',0)>0 and w.get('reload',0)<=0 and
-                         max(0.,ey(gy)-st['turn_rate']*.05)<tol_y and max(0.,ep(gp)-st['pitch_rate']*.05)<tol_p)
+            gun_range=min(s['range']-5,120 if kind!='mech' else 230) if pressure else s['range']*.96
+            fire[i]=bool(dist<gun_range and w.get('ammo',0)>0 and w.get('reload',0)<=0 and
+                         max(0.,ey(gy)-st['turn_rate']*(.045 if pressure else .05))<tol_y and max(0.,ep(gp)-st['pitch_rate']*(.045 if pressure else .05))<tol_p)
             if fire[i] and use_dev_aim and world is not None:
                 fire[i]=world.shot_clear(gun_muzzle,gun_point)
         elif wk=='lightning':
-            fire[i]=bool(dist<s['range']-1.5 and ey(hy)<math.radians(s['cone_deg'])*.5-.05 and me['energy']>=s['energy'])
-        elif wk=='laser' and kind=='mech' and dist<=s['range']*.97:
+            if pressure:
+                relative_speed=math.hypot(tv[0]-vel[0],tv[1]-vel[1])
+                fire[i]=bool(beam_clear and dist<s['range']-1-.05*relative_speed
+                             and max(0.,ey(hy)-st['turn_rate']*.045)<math.radians(s['cone_deg'])*.4
+                             and me['energy']>=s['energy'])
+            else:
+                fire[i]=bool(dist<s['range']-1.5 and ey(hy)<math.radians(s['cone_deg'])*.5-.05 and me['energy']>=s['energy'])
+        elif wk=='laser' and (kind=='mech' or pressure) and (dist<(s['range']-4 if pressure else s['range']*.97) or (pressure and w.get('charge',0)>0)):
             charge=w.get('charge',0); full=s['charge']; lethal=False
+            if pressure:
+                damage_scale=1+config['cubes']['damage_per_cube']*min(me['cubes'],config['cubes']['stat_cap'])
+                def beam_damage(value):
+                    return s['damage']*(s['min_frac']+(1-s['min_frac'])*min(1,value/full))*damage_scale
+                if charge>0 and (charge>=full-.16 or beam_damage(charge+.1)>=target.get('hp',math.inf)):
+                    aim=[hy,hp]
+                if charge>0:
+                    lethal=charge>=s['min_charge'] and beam_damage(charge)>=target.get('hp',math.inf)
+                    yaw_left=max(0.,ey(hy)-st['turn_rate']*.045)
+                    pitch_left=max(0.,ep(hp)-st['pitch_rate']*.045)
+                    aligned=yaw_left<math.atan2(radius*2,max(dist,1)) and pitch_left<math.atan2(height*.68,max(dist,1))
+                    fire[i]=not ((charge>=full-.001 or lethal) and aligned and beam_clear and dist<s['range']-4)
+                else:
+                    fire[i]=w.get('cooldown',0)<=.12 and dist<s['range']-4
+                continue
             if squad and s['min_charge']<=charge<full-.051:
                 count=min(me['cubes'],config['cubes']['stat_cap'])
                 damage=s['damage']*(s['min_frac']+(1-s['min_frac'])*charge/full)*(1+config['cubes']['damage_per_cube']*count)
@@ -216,21 +278,28 @@ def aim_and_fire(me, target, config, squad=False, world=None):
             if lethal:
                 aim=[hy,hp]
             elif charge<full-.051:
-                fire[i]=True
+                fire[i]=bool(charge > 0 or not pressure or w.get('cooldown', 0) <= .12)
                 if charge>full*.45: aim=[hy,hp]
             else:
                 aim=[hy,hp]; fire[i]=not (ey(hy)<tol_y*.9 and ep(hp)<tol_p)
-        elif wk=='mortar' and world is not None and kind=='mech' and w.get('cooldown',0)<=.25 and 16<=dist<=200:
+        elif wk=='mortar' and allow_fire and world is not None and not laser_ready and (kind=='mech' or pressure) and w.get('cooldown',0)<=(.15 if pressure else .25) and 16<=dist<=200:
             tube=(muzzle[0],muzzle[1],p[2]+st['height']+.5)
-            solution=mortar_solution(world,tube,pos,tv,s.get('speed',0),s.get('gravity',0),st)
+            solution=mortar_solution(world,tube,pos,tv,s.get('speed',0),s.get('gravity',0),st,pressure)
             if solution:
                 yaw,pitch=solution
-                if not gun or gun.get('reload',0)>0 or gun.get('ammo',0)==0 or dist>gun['stats']['range']*.96: aim=[yaw,pitch]
-                fire[i]=max(0.,ey(yaw)-st['turn_rate']*.05)<.04 and max(0.,ep(pitch)-st['pitch_rate']*.05)<.03
+                gun_idle=not gun or gun.get('reload',0)>0 or gun.get('ammo',0)==0 or dist>gun['stats']['range']*.96
+                flight=dist/max(1.,s.get('speed',72)*math.cos(pitch))
+                miss=math.hypot(tv[0],tv[1])*flight*(.5 if kind=='mech' else .2)
+                promising=pressure and dist>s.get('splash_radius',7)+st['radius']+3 and miss<s.get('splash_radius',7)*.75
+                if gun_idle or promising: aim=[yaw,pitch]
+                if (not pressure or w.get('cooldown',0)<=.05) and (not pressure or gun_idle or promising):
+                    fire[i]=max(0.,ey(yaw)-st['turn_rate']*.05)<.04 and max(0.,ep(pitch)-st['pitch_rate']*.05)<.03
     aim[1]=max(st['min_pitch'],min(st['max_pitch'],aim[1]))
     if gun and os.getenv('BOT_GUN_AIM_CHECK', 'actual') == 'actual':
-        yaw_step=max(-st['turn_rate']*.05,min(st['turn_rate']*.05,angle_diff(aim[0],actual[0])))
-        pitch_step=max(-st['pitch_rate']*.05,min(st['pitch_rate']*.05,aim[1]-actual[1]))
+        gun_primary=not pressure or (abs(angle_diff(aim[0],gy))<1e-8 and abs(aim[1]-gp)<1e-8)
+        step=(.045 if pressure else .05) if gun_primary else 0.
+        yaw_step=max(-st['turn_rate']*step,min(st['turn_rate']*step,angle_diff(aim[0],actual[0])))
+        pitch_step=max(-st['pitch_rate']*step,min(st['pitch_rate']*step,aim[1]-actual[1]))
         aligned=abs(angle_diff(gy,actual[0]+yaw_step))<tol_y and abs(gp-actual[1]-pitch_step)<tol_p
         for i,w in enumerate(weapons[:2]):
             if w and w['kind']=='gun': fire[i]=fire[i] and aligned
@@ -244,17 +313,58 @@ def favorable_fight(state, obs, track, hp):
         return False
     # Avoid initiating with an empty/reloading gun or an unavailable laser.
     ready = any(w and ((w['kind'] == 'gun' and w.get('ammo', 0) > 0 and w.get('reload', 0) <= 0)
-                       or (w['kind'] == 'laser' and w.get('cooldown', 0) <= .25))
+                       or (w['kind'] == 'laser' and w.get('cooldown', 0) <= .25)
+                       or (getattr(state, 'pressure_policy', False) and w['kind'] == 'lightning'
+                           and me['energy'] >= w['stats']['energy']))
                 for w in me.get('weapons', []))
     if not ready:
         return False
     for other in state.tracks.values():
         actor = other['actor']
-        if (actor['id'] != target['id'] and actor['kind'] == 'mech'
+        if (not getattr(state, 'pressure_policy', False)
+                and actor['id'] != target['id'] and actor['kind'] == 'mech'
                 and now - other['seen'] < 2.5
                 and math.dist(me['pos'][:2], actor['pos'][:2]) < 160):
             return False
-    return Combat(state.cfg).estimate(me, target, 1) >= 1.3
+    threshold = .7 if getattr(state, 'pressure_policy', False) else 1.3
+    return Combat(state.cfg).estimate(me, target, 1) >= threshold
+
+
+def assess_pressure(state, obs):
+    """Build a compact picture of opponents and their immediate pressure."""
+    me, now = obs['self'], obs['t']
+    known, engaged = [], []
+    for track in state.tracks.values():
+        actor = track['actor']
+        age = now - track['seen']
+        if actor['kind'] != 'mech' or age > 8:
+            continue
+        d = math.dist(me['pos'], actor['pos'])
+        ground_distance = math.dist(me['pos'][:2], actor['pos'][:2])
+        current = age < .11
+        bearing = math.atan2(me['pos'][1]-actor['pos'][1], me['pos'][0]-actor['pos'][0])
+        aim_error = abs(angle_diff(actor.get('aim', [bearing])[0], bearing))
+        if current and aim_error < .12+math.atan2(1.5*me['stats']['radius'],max(1,ground_distance)):
+            state.pressure_aim_times[actor['id']] = now
+        aimed = now-state.pressure_aim_times.get(actor['id'],-100) < .6
+        attacking = now - state.hits.get(actor['id'], -100) < 4
+        aim_range = 285 if 'laser' in actor.get('weapons',[]) else 200
+        vel=actor.get('vel',[0,0,0])
+        closing=(vel[0]*(me['pos'][0]-actor['pos'][0])+vel[1]*(me['pos'][1]-actor['pos'][1]))/max(1,ground_distance)
+        active = attacking or (current and track['los'] and (d < 40 or (d < aim_range and aimed)
+                            or (d < 90 and aim_error < .5 and closing > 4)))
+        if active:
+            state.pressure_engage_times[actor['id']] = now
+        elif current and now-state.pressure_engage_times.get(actor['id'],-100) < .8:
+            active = True
+        track['engage'] = active
+        item = {'actor': actor, 'track': track, 'distance': d, 'current': current, 'active': active}
+        known.append(item)
+        if active:
+            engaged.append(item)
+    visible = [item for item in known if item['current']]
+    target = max(visible, key=lambda item: (1.5 if item['track']['los'] else 1)/(1+item['distance']/60), default=None)
+    return known, engaged, target
 
 
 def assess_combat(state, obs, squad, late, hp):
@@ -305,6 +415,12 @@ def assess_combat(state, obs, squad, late, hp):
 def apply_weapon_control(state, obs, action, target, foe, squad):
     """Choose a defensive target, aim, and update weapon triggers."""
     me=obs['self']; p=me['pos']; t=obs['t']
+    pressure = getattr(state, 'decision_policy', '') == 'pressure'
+    if pressure:
+        for sound in obs.get('sounds', []):
+            if sound.get('kind') in ('gun', 'laser', 'lightning', 'mortar', 'laser_charge', 'boost', 'step', 'jet', 'reload') and sound.get('dist') != 'far':
+                state.scan_sound_at = t - sound.get('age', 0)
+                state.scan_sound_bearing = sound['bearing']
     if not target and t-state.npc_hurt<3:
         candidates=[]
         for track in state.tracks.values():
@@ -316,22 +432,46 @@ def apply_weapon_control(state, obs, action, target, foe, squad):
             if d<150 and (actor['id']==state.npc_id or error<.7): candidates.append((error,d,actor['id'],actor))
         if candidates: target=min(candidates)[-1]
     if target:
-        try: action.update(aim_and_fire(me,target,state.cfg,squad,state.world))
+        try: action.update(aim_and_fire(me,target,state.cfg,squad,state.world,
+                                        getattr(state, 'decision_policy', '') == 'pressure'))
         except (KeyError,ValueError,ZeroDivisionError): pass
+        if getattr(state, 'decision_policy', '') == 'pressure':
+            if any(w and w['kind'] == 'gun' and w.get('ammo', 0) <= 0 and w.get('reload', 0) <= 0 for w in me['weapons']):
+                action['reload'] = True
     else:
-        watch=[tr['actor'] for tr in state.tracks.values() if tr['actor']['kind']=='mech' and t-tr['seen']<2.5 and
-               (tr.get('engage',False) or t-state.hits.get(tr['actor']['id'],-100)<6)]
+        watch=[tr['actor'] for tr in state.tracks.values() if tr['actor']['kind']=='mech' and t-tr['seen']<(.11 if pressure else 2.5) and
+               (pressure or tr.get('engage',False) or t-state.hits.get(tr['actor']['id'],-100)<6)]
         if watch:
             nearest=min(watch,key=lambda a:math.dist(p[:2],a['pos'][:2]))
             yaw=math.atan2(nearest['pos'][1]-p[1],nearest['pos'][0]-p[0])
+        elif pressure and t < 1.75: yaw=me['aim'][0]+.39
         elif t-state.npc_hurt<2.5 and state.npc_bearing is not None: yaw=state.npc_bearing
         elif t-state.last_hurt<2.5: yaw=state.hurt_bearing
+        elif pressure and t-getattr(state, 'scan_sound_at', -100) < 1.5: yaw=state.scan_sound_bearing
+        elif pressure:
+            match=state.cfg.get('match',{})
+            state.scan_phase=getattr(state, 'scan_phase', 0.)+match.get('decide_every',2)/match.get('tick_hz',20)
+            yaw=(math.atan2(action['move'][1],action['move'][0])+1.9*math.sin(state.scan_phase*1.3)
+                 if any(action['move']) else me['aim'][0]+.35)
         elif any(action['move']): yaw=math.atan2(action['move'][1],action['move'][0])+1.15*math.sin(t*1.3)
         else: yaw=me['aim'][0]+.35
         action['aim']=[yaw,0]
-        for w in me['weapons']:
-            if w and w['kind']=='gun' and w.get('reload',0)<=0 and w.get('ammo',0)<w['stats']['mag']*.6: action['reload']=True
-    if target is None and foe is not None:
+        if pressure and watch:
+            try:
+                watched = aim_and_fire(me, nearest, state.cfg, squad, state.world, True, False)
+                action['aim'] = watched['aim']
+                for i, w in enumerate(me['weapons'][:2]):
+                    if w and w['kind'] == 'laser' and w.get('charge', 0) > 0:
+                        action['fire'][i] = watched['fire'][i]
+            except (KeyError, ValueError, ZeroDivisionError):
+                pass
+        if not pressure or not watch:
+            for w in me['weapons']:
+                if w and w['kind']=='gun' and w.get('reload',0)<=0 and w.get('ammo',0)<w['stats']['mag']*(.67 if pressure else .6): action['reload']=True
+        if pressure and not watch and any(tr['actor']['kind']=='mech' and t-tr['seen']<1.5 for tr in state.tracks.values()):
+            for i, w in enumerate(me['weapons'][:2]):
+                if w and w['kind']=='laser' and w.get('charge',0)>0: action['fire'][i]=True
+    if target is None and foe is not None and getattr(state, 'decision_policy', '') != 'pressure':
         distance=math.dist(p[:2],foe['pos'][:2])
         for i,w in enumerate(me['weapons'][:2]):
             if w and w['kind']=='laser' and w.get('cooldown',0)<=.05 and distance<w['stats']['range'] and w['charge']<w['stats']['charge']+w['stats']['hold_s']-.35: action['fire'][i]=True

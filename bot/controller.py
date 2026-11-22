@@ -5,8 +5,8 @@ import random
 import time
 
 from .geometry import Arena, angle_diff, zone_goal, zone_deadline
-from .combat import assess_combat, apply_weapon_control
-from .loadout import choose_loadout, choose_objective
+from .combat import Combat, assess_combat, assess_pressure, apply_weapon_control
+from .loadout import choose_loadout, choose_objective, pressure_pickup
 from .movement import Movement
 from .positional_field import PositionalField
 from .corridor import FightCorridor
@@ -29,12 +29,124 @@ class Controller:
         self.supply_drops = os.getenv('BOT_SUPPLY_DROPS', '1') == '1'
         self.slot = hello['slot']
         self.laser_rush = os.getenv('BOT_LASER_RUSH') == '1'
+        self.lightning_close = os.getenv('BOT_LIGHTNING_CLOSE') == '1'
+        self.pressure_policy = os.getenv('BOT_PRESSURE_POLICY') == '1'
+        self.decision_policy = os.getenv('BOT_DECISION_POLICY', 'classic')
+        self.recent_damage = []
+        self.pressure_aim_times = {}
+        self.pressure_engage_times = {}
+        self.retreat_started = -100.
+        self.lobby_alive = None
+        self.lobby_kills = 0
+        self.lobby_unknown_deaths = 0
+        self.credit_hit_at = -100.
+        self.credit_target = None
+        self.credit_absorbed_at = -100.
         self.late_hide = os.getenv('BOT_LATE_HIDE') == '1'
         self.recovery_enabled=os.getenv('BOT_SQUAD_RECOVERY','legacy')=='cover'
         self.farming_policy=os.getenv('BOT_SQUAD_FARMING','legacy')
         self.squad_cover=os.getenv('BOT_SQUAD_POSITION','legacy')=='cover'
         self.nav_method=os.getenv('BOT_NAV_METHOD','spacing')
         self.recovery_since=None; self.recovery_cooldown=-100.
+        self.seen_cells={}; self.roam_cell=None; self.roam_at=-100.
+
+    def mark_exploration(self, obs):
+        """Remember recently visible 32 m exploration cells."""
+        if obs['tick'] % 6: return
+        world=self.world; p=obs['self']['pos']; t=obs['t']; aim=obs['self']['aim'][0]
+        bounds=world.bounds; xmin=bounds['minX']; ymin=bounds['minY']
+        nx=math.ceil((bounds['maxX']-xmin)/32)+1; ny=math.ceil((bounds['maxY']-ymin)/32)+1
+        i0=max(0, int((p[0]-150-xmin)/32)); i1=min(nx-1,int((p[0]+150-xmin)/32))
+        j0=max(0, int((p[1]-150-ymin)/32)); j1=min(ny-1,int((p[1]+150-ymin)/32))
+        eye=[p[0],p[1],p[2]+obs['self']['stats'].get('eye_height',8)]
+        half=math.radians(self.cfg['vision'].get('fov_deg',120))*.5
+        deadline=getattr(self,'action_deadline',time.perf_counter()+.02)-.006
+        for j in range(j0,j1+1):
+            for i in range(i0,i1+1):
+                if time.perf_counter()>=deadline: return
+                key=(i,j)
+                if self.seen_cells.get(key,-1e6)>t-2: continue
+                x=xmin+(i+.5)*32; y=ymin+(j+.5)*32
+                d=math.hypot(x-p[0],y-p[1])
+                if d>150 or (d>40 and abs(angle_diff(math.atan2(y-p[1],x-p[0]),aim))>half): continue
+                if d<20 or world.shot_clear(eye,[x,y,world.ground(x,y)+2]): self.seen_cells[key]=t
+
+    def pressure_roam(self, obs, hp):
+        """Look for unseen ground while healthy and still gathering cubes."""
+        me=obs['self']; p=me['pos']; t=obs['t']; z=obs['zone']; brawl=self.ffa or t<6
+        want=40 if obs['alive']<=2 else 10 if brawl else 26
+        if hp<.7 or me['cubes']>=want: return None
+        world=self.world; bounds=world.bounds; xmin=bounds['minX']; ymin=bounds['minY']
+        grid=world.baked
+        if not grid: return None
+        here=world.nearest_free(world.cell(*p[:2]))
+        if here is None: return None
+        comp=grid['component'][here[1]*grid['nx']+here[0]]
+        if self.roam_cell and t-self.roam_at<12 and self.seen_cells.get(self.roam_cell,-1e6)<t-20:
+            i,j=self.roam_cell; return (xmin+(i+.5)*32,ymin+(j+.5)*32)
+        nx=math.ceil((bounds['maxX']-xmin)/32)+1; ny=math.ceil((bounds['maxY']-ymin)/32)+1
+        choices=[]
+        for j in range(ny):
+            y=ymin+(j+.5)*32
+            for i in range(nx):
+                age=t-self.seen_cells.get((i,j),-1e6)
+                if age<45: continue
+                x=xmin+(i+.5)*32
+                dn=math.dist((x,y),z['next_center'])
+                if dn>z['next_radius']-15 or not world.inside(x,y): continue
+                cell=world.cell(x,y); idx=cell[1]*grid['nx']+cell[0]
+                if grid['component'][idx]!=comp or not world.free_cell(cell): continue
+                score=math.hypot(x-p[0],y-p[1])-min(age,300)*.15+dn*.15
+                choices.append((score,i,j,cell))
+        if not choices: return None
+        _,i,j,cell=min(choices); self.roam_cell=(i,j); self.roam_at=t
+        return world.cell_pos(cell)
+
+    def pressure_fight_cube(self, obs, hp):
+        """Pick up nearby cube piles while continuing to engage a target."""
+        me=obs['self']; pos=me['pos']; now=obs['t']; brawl=self.ffa or now<6
+        limit=40 if obs['alive']<=2 else 10 if brawl else 26
+        if me['cubes']>=limit+6: return None
+        cubes=[item for kind,item,seen in self.items.values() if kind=='cubes' and now-seen<20]
+        held_lightning=any(w and w['kind']=='lightning' for w in me['weapons'])
+        best=None; best_value=0.
+        grid=self.world.baked
+        here=self.world.nearest_free(self.world.cell(*pos[:2])) if grid else None
+        component=grid['component'][here[1]*grid['nx']+here[0]] if here is not None else None
+        for cube in cubes:
+            d=math.dist(pos[:2],cube['pos'][:2])
+            count=sum(math.dist(other['pos'][:2],cube['pos'][:2])<7 for other in cubes)
+            if d>(110 if count>=2 else 40) or (d>30 and hp<.3): continue
+            if not held_lightning and any(tr['actor']['kind']=='mech' and 'lightning' in tr['actor'].get('weapons',[])
+                                          and now-tr['seen']<4 and math.dist(cube['pos'][:2],tr['actor']['pos'][:2])<53
+                                          for tr in self.tracks.values()): continue
+            if now+d/max(1,me['stats']['walk_speed'])+1>zone_deadline(self.hold,obs['zone'],*cube['pos'][:2],3): continue
+            cell=self.world.nearest_free(self.world.cell(*cube['pos'][:2])) if grid else None
+            if grid and (cell is None or component is None or grid['component'][cell[1]*grid['nx']+cell[0]]!=component): continue
+            value=count/(d+12)
+            if value>best_value: best,best_value=cube,value
+        return best
+
+    def pressure_fight_weapon(self, obs):
+        me=obs['self']; pos=me['pos']; now=obs['t']
+        values={'gun':2.,'lightning':2.1,'laser':2.4,'mortar':2.6}
+        best=None; best_value=0.
+        for ident,(kind,item,seen) in self.items.items():
+            if kind!='pickups' or now-seen>20 or self.bad.get(ident,0)>now: continue
+            d=math.dist(pos[:2],item['pos'][:2])
+            wanted,slot=pressure_pickup(item['kind'],me['weapons'])
+            if not wanted or d>32: continue
+            value=values[item['kind']]
+            if slot is not None:
+                value-=values.get(me['weapons'][slot]['kind'],0)
+                if value<1: continue
+            if any(tr['actor']['kind']=='mech' and now-tr['seen']<5 and
+                   math.dist(tr['actor']['pos'][:2],item['pos'][:2])<max(30,d*.8)
+                   for tr in self.tracks.values()): continue
+            if now+d/max(1,me['stats']['walk_speed'])+2>zone_deadline(self.hold,obs['zone'],*item['pos'][:2],5): continue
+            score=value/(d+15)
+            if score>best_value: best,best_value=item,score
+        return best
 
     def act(self,obs):
         self.action_deadline=time.perf_counter()+.027
@@ -49,6 +161,8 @@ class Controller:
             self.movement.cover = None
             self.movement.home_xy = None
         self.update_world(obs); me=obs['self']; p=me['pos']; t=obs['t']; z=obs['zone']; hp=me['hp']/max(1,me['max_hp'])
+        if self.decision_policy == 'pressure':
+            return self.act_pressure(obs)
         # This submission is explicitly for the cooperative practice field.
         practice = True
         hide = practice and self.late_hide and z['next_radius'] <= 140 and obs['alive'] > 3
@@ -163,7 +277,27 @@ class Controller:
             if step is not None:
                 action['move'] = step
                 mode = 'fight-corridor'
+        if (self.pressure_policy and target and target.get('kind') == 'mech'
+                and not urgent and not shell and not self.retreat and hp > .6
+                and mode in ('fight', 'positional-field', 'corner-duel')):
+            # Keep a favorable isolated fight active instead of holding position.
+            nearby = sum(math.dist(p[:2], actor['pos'][:2]) < 120 for actor in seen)
+            distance = math.dist(p[:2], target['pos'][:2])
+            if nearby <= 1 and distance > 35:
+                action['move'] = self.movement.navigate(me, target['pos'], t)
         self.movement.apply_evasion_and_recovery(obs,action,mode)
+        if (self.pressure_policy and mode in ('cover', 'flee') and me['grounded']
+                and me['energy'] > 45 and any(action['move'])):
+            action['boost'] = True
+        if (self.lightning_close and mode == 'fight' and target and not self.retreat
+                and me['grounded'] and me['energy'] > 55):
+            lightning = next((w for w in me['weapons'] if w and w['kind'] == 'lightning'), None)
+            dx, dy = target['pos'][0]-p[0], target['pos'][1]-p[1]
+            distance = math.hypot(dx, dy)
+            # Spend energy only when the chosen movement actually closes the gap.
+            if (lightning and distance > lightning['stats']['range'] + 10
+                    and action['move'][0]*dx + action['move'][1]*dy > .4*distance):
+                action['boost'] = True
         apply_weapon_control(self,obs,action,target,foe,squad)
         if (self.laser_rush and not self.ffa and mode in ('idle', 'loot', 'home') and target is None
                 and t - self.last_threat > 3 and t - self.npc_hurt > 3
@@ -177,6 +311,171 @@ class Controller:
 
     def update_world(self, obs):
         return update_perception(self, obs)
+
+    def act_pressure(self, obs):
+        """Coordinate combat, recovery and objectives using persistent threat state."""
+        self.mark_exploration(obs)
+        me, now, zone = obs['self'], obs['t'], obs['zone']
+        pos = me['pos']
+        hp = me['hp'] / max(1, me['max_hp'])
+        for event in obs.get('events', []):
+            if event['type'] == 'hit' and isinstance(event.get('target'), int) and event['target'] < 100:
+                self.credit_hit_at, self.credit_target = now, event['target']
+        if self.lobby_alive is None:
+            self.lobby_alive = obs['alive']
+        deaths = max(0, self.lobby_alive - obs['alive'])
+        credited = max(0, len(self.kills) - self.lobby_kills)
+        if deaths and not credited and now-self.credit_hit_at < 6:
+            recent = self.tracks.get(self.credit_target)
+            still_alive = bool(recent and now-recent['seen'] < .11 and recent['actor'].get('hp', 1) > 0)
+            if not still_alive:
+                credited = 1
+                self.credit_absorbed_at = now
+        self.lobby_unknown_deaths += max(0, deaths - credited)
+        self.lobby_alive = min(self.lobby_alive, obs['alive'])
+        self.lobby_kills = len(self.kills)
+        if ((self.lobby_unknown_deaths >= 1 and now < 35)
+                or (self.lobby_unknown_deaths >= 2 and now < 110)
+                or self.lobby_unknown_deaths >= 3):
+            self.ffa = True
+        self.recent_damage.extend((now, e.get('amount', 0)) for e in obs.get('events', [])
+                                  if e['type'] == 'damaged' and e.get('weapon') not in ('npc', 'zone'))
+        self.recent_damage = [(t, amount) for t, amount in self.recent_damage if now-t < 3]
+        damage_rate = sum(amount for _, amount in self.recent_damage) / 3
+        survival = me['hp'] / max(1, damage_rate)
+        known, engaged, selected = assess_pressure(self, obs)
+        actors = [item['actor'] for item in known]
+        threat = selected['actor'] if selected else None
+        # Fight and pursuit ranges measure the actual separation, including
+        # elevation. A mech above or below us may be outside pursuit range
+        # even when its ground projection is close enough.
+        distance = math.dist(pos, threat['pos']) if threat else math.inf
+        can_see = bool(selected and selected['track']['los'])
+        danger = bool(engaged or damage_rate > 0)
+        advantage = Combat(self.cfg).estimate(me, threat, max(1, len(engaged)), True) if threat else 0
+        cautious = self.ffa or now < 6 or now-self.credit_absorbed_at < 25
+        recent_hit = threat is not None and now-self.hits.get(threat['id'], -100) < 4
+        provoked = bool(threat and (recent_hit or distance < 85
+                         or ('laser' in threat.get('weapons', []) and threat.get('charging'))))
+        have_laser = any(w and w['kind'] == 'laser' for w in me['weapons'])
+        laser_edge = bool(threat and have_laser and 'laser' not in threat.get('weapons', []))
+        attack = bool(threat and can_see and (
+            obs['alive'] <= 2 or
+            (selected['active'] and (not cautious or provoked)) or
+            (hp > .6 and distance < 130 and advantage >= (1.3 if cautious else .7)
+             and (not cautious or laser_edge or advantage >= 3))))
+        if self.retreat:
+            safe_to_fight = threat and can_see and len(engaged) <= 1 and hp > .3 and advantage > .95
+            trapped = threat and can_see and distance < 45 and len(engaged) <= 1 and now-self.retreat_started > 2
+            if (hp >= .65 and not danger) or safe_to_fight or trapped:
+                self.retreat = False
+        elif danger:
+            single_lost = len(engaged) <= 1 and threat and advantage < .5 and distance > 30 and survival < 25
+            overwhelmed = len(engaged) >= 2 and ((hp < .8 and survival < 10) or (hp < .2 and survival < 20))
+            unknown_hit = not engaged and damage_rate > 0 and (hp < .6 or survival < 15)
+            if single_lost or overwhelmed or unknown_hit:
+                self.retreat = True
+                self.retreat_started = now
+                self.movement.cover = None
+        if threat and can_see and threat.get('hp', 1400) < 180 and hp > .12:
+            self.retreat = False
+
+        goal = zone_goal(zone, *pos[:2])
+        deadline = zone_deadline(self.hold, zone, *pos[:2], 8)
+        travel = math.dist(pos[:2], goal) * 1.45 / max(1, me['stats']['walk_speed']) + 4
+        urgent = not me['in_zone'] or now + travel + 3 >= deadline
+        action = {'tick': obs['tick'], 'move': [0., 0.], 'fire': [False, False], 'boost': False, 'jump': False}
+        shell = self.movement.avoid_shells(obs)
+        target = None
+        mode = 'idle'
+        if now < self.movement.unstuck_until:
+            action['move'] = list(self.movement.unstuck_dir); mode = 'unstuck'
+        elif shell:
+            action['move'] = shell; action['boost'] = me['energy'] > 15; mode = 'dodge'
+        elif urgent and math.dist(pos[:2], goal) > 2:
+            action['move'] = self.movement.navigate(me, goal, now)
+            action['boost'] = me['energy'] > 20; mode = 'zone'
+        elif self.retreat:
+            covered = self.movement.seek_cover(obs, actors)
+            if covered is not None:
+                action['move'] = covered
+                action['boost'] = any(covered) and damage_rate > 0 and me['energy'] > 20
+                mode = 'retreat' if any(covered) else 'heal'
+            elif threat:
+                dx, dy = pos[0]-threat['pos'][0], pos[1]-threat['pos'][1]
+                length = max(1, math.hypot(dx, dy))
+                action['move'] = self.movement.navigate(me, (pos[0]+30*dx/length, pos[1]+30*dy/length), now)
+                action['boost'] = me['energy'] > 30; mode = 'retreat'
+            else:
+                mode = 'heal'
+            if can_see:
+                target = threat
+        elif attack:
+            target = threat
+            weapon = self.pressure_fight_weapon(obs)
+            cube = self.pressure_fight_cube(obs, hp)
+            if weapon:
+                action['move'] = self.movement.navigate(me, weapon['pos'], now); mode = 'fight-weapon'
+            elif cube:
+                action['move'] = self.movement.navigate(me, cube['pos'], now); mode = 'fight-cube'
+            elif len(engaged) >= 2 and distance < 130:
+                dx, dy = pos[0]-threat['pos'][0], pos[1]-threat['pos'][1]
+                length = max(1, math.hypot(dx, dy))
+                action['move'] = self.movement.navigate(me, (pos[0]+40*dx/length, pos[1]+40*dy/length), now)
+                action['boost'] = distance < 70 and me['energy'] > 45; mode = 'kite'
+            else:
+                action['move'] = self.movement.combat_move(obs, threat, actors, True, 1, self.items, desired_override=30)
+                lightning = next((w for w in me['weapons'] if w and w['kind'] == 'lightning'), None)
+                if lightning and distance > lightning['stats']['range']+10 and me['energy'] > 55:
+                    action['boost'] = True
+                mode = 'fight'
+        else:
+            objective = self.choose_objective(obs, hp, danger, True)
+            if objective:
+                ident, kind, item, dist, seen_at = objective
+                if ident != self.loot_id:
+                    self.loot_id, self.loot_since = ident, now
+                elif now-self.loot_since > 30:
+                    self.bad[ident] = now+60; self.loot_id = None
+                if kind == 'drops':
+                    if dist > 3:
+                        action['move'] = self.movement.navigate(me, item['pos'], now)
+                elif kind == 'npc':
+                    visible = now-seen_at < 1 and self.tracks[ident]['los']
+                    if visible and dist < 110:
+                        target = item
+                    if dist > 60 or not visible:
+                        action['move'] = self.movement.navigate(me, item['pos'], now)
+                    else:
+                        action['move'] = self.movement.combat_move(obs, item, actors, True, 1, self.items, desired_override=60)
+                elif kind == 'crates' and dist < 70:
+                    target = dict(item, kind='crate', vel=[0, 0, 0])
+                    if dist > 9:
+                        action['move'] = self.movement.navigate(me, item['pos'], now)
+                else:
+                    action['move'] = self.movement.navigate(me, item['pos'], now)
+                    if (kind == 'pickups' and item['kind'] == 'laser' and not have_laser
+                            and dist > 25 and me['energy'] > 40):
+                        action['boost'] = True
+                mode = 'loot'
+            else:
+                roof_wanted = (self.ffa and obs['alive']>2 and zone['next_radius']>=60
+                               and (have_laser or me['cubes']>=6 or now>=60))
+                nearby = any(item['current'] and item['track']['los'] and item['distance']<150 for item in known)
+                roof = self.movement.pressure_roof_step(obs, not nearby and now-self.last_hurt>=3) if roof_wanted else None
+                if roof is not None:
+                    mode = roof.pop('mode')
+                    action.update(roof)
+                elif (roam := self.pressure_roam(obs,hp)) is not None:
+                    action['move'] = self.movement.navigate(me, roam, now); mode = 'roam'
+                elif math.dist(pos[:2], goal) > 3:
+                    action['move'] = self.movement.navigate(me, goal, now); mode = 'zone-walk'
+        if mode != 'roof-climb':
+            self.movement.apply_evasion_and_recovery(obs, action, mode)
+        apply_weapon_control(self, obs, action, target, threat if can_see else None, True)
+        action.update(choose_loadout(obs, self.cfg, pressure=True))
+        self.mode = mode
+        return action
 
     def assess_combat(self, obs, squad, late, hp):
         return assess_combat(self, obs, squad, late, hp)

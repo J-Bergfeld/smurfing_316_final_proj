@@ -4,10 +4,11 @@ COPY main.py mechfight.py ./
 COPY bot ./bot
 ENV PYTHONDONTWRITEBYTECODE=1 \
     BOT_POLICY=integrated \
+    BOT_DECISION_POLICY=pressure \
     BOT_NAV_METHOD=legacy \
     BOT_GUN_AIM_CHECK=actual \
     BOT_AIM_MODEL=dev \
-    BOT_SUPPLY_DROPS=0 \
+    BOT_SUPPLY_DROPS=1 \
     BOT_CORNER_DUEL=1 \
     BOT_POSITIONAL_FIELD=1 \
     BOT_FIGHT_CORRIDOR=0 \
