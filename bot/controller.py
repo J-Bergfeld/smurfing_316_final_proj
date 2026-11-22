@@ -1,5 +1,6 @@
 """Coordinate the match policy across perception, movement, and combat."""
 import math
+import os
 import random
 import time
 
@@ -18,6 +19,8 @@ class Controller:
         self.npc_hurt=-100.; self.npc_bearing=None; self.npc_id=None
         self.hurt_bearing=0.
         self.last_aim=[0.,0.]
+        self.recovery_enabled=os.getenv('BOT_SQUAD_RECOVERY','legacy')=='cover'
+        self.recovery_since=None; self.recovery_cooldown=-100.
 
     def act(self,obs):
         self.action_deadline=time.perf_counter()+.027
@@ -29,12 +32,30 @@ class Controller:
         urgent=not me['in_zone'] or t+need+3>=deadline
         action={'tick':obs['tick'],'move':[0.,0.],'fire':[False,False],'boost':False,'jump':False}; mode='idle'
         shell=self.movement.avoid_shells(obs)
+        recovery_move=None
+        if self.recovery_enabled and squad:
+            if self.recovery_since is not None and (hp>=.8 or urgent or t-self.recovery_since>=10):
+                self.recovery_since=None; self.recovery_cooldown=t+5
+            close_threat=any(math.dist(p[:2],a['pos'][:2])<35 for a in seen)
+            wants_recovery=(self.recovery_since is not None or
+                            (self.retreat and hp<.65 and t>=self.recovery_cooldown))
+            if wants_recovery and not urgent and not finishing and not close_threat:
+                recovery_move=self.movement.seek_cover(obs,seen)
+                if recovery_move is None and self.recovery_since is not None and not seen and self.movement.cover is not None:
+                    recovery_move=self.movement.navigate(me,self.movement.cover,t)
+                if recovery_move is not None and self.recovery_since is None: self.recovery_since=t
+            if wants_recovery and recovery_move is None and self.recovery_since is not None:
+                self.recovery_since=None; self.recovery_cooldown=t+5
+        elif self.recovery_since is not None:
+            self.recovery_since=None
         if t<self.movement.unstuck_until:
             action['move']=list(self.movement.unstuck_dir); mode='unstuck'
         elif shell:
             action['move']=shell; action['boost']=me['energy']>15; mode='dodge'
         elif urgent and math.dist(p[:2],goal)>2:
             action['move']=self.movement.navigate(me,goal,t); action['boost']=me['energy']>5; mode='zone'
+        elif recovery_move is not None:
+            action['move']=recovery_move; action['boost']=me['energy']>10 and any(recovery_move); mode='recover'
         elif foe and not (self.retreat and not finishing and not late):
             distance=math.dist(p[:2],foe['pos'][:2]); gun=next((w for w in me['weapons'] if w and w['kind']=='gun'),None); laser_weapon=next((w for w in me['weapons'] if w and w['kind']=='laser'),None)
             ready=bool(gun and gun['ammo']>0 and gun['reload']<=.25 and distance<=gun['stats']['range']-10)
@@ -85,6 +106,7 @@ class Controller:
                     action['move']=[v*factor for v in action['move']]
         self.movement.apply_evasion_and_recovery(obs,action,mode)
         apply_weapon_control(self,obs,action,target,foe,squad)
+        if mode=='recover': action['fire']=[False,False]
         action.update(choose_loadout(obs,self.cfg))
         self.mode=mode
         return action

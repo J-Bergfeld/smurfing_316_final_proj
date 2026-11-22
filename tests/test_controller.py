@@ -11,6 +11,56 @@ from test_bot import HELLO, enemy, observation
 
 
 class ControllerTests(unittest.TestCase):
+    def test_squad_recovery_holds_fire_and_persists_then_stops(self):
+        with patch.dict('os.environ', {'BOT_SQUAD_RECOVERY': 'cover'}):
+            bot = Controller(HELLO)
+        obs = observation()
+        obs.update(t=21, tick=2)
+        obs['self']['hp'] = obs['self']['max_hp'] * .45
+        foe = enemy(100)
+        bot.update_world = Mock()
+        bot.assess_combat = Mock(return_value=([foe], foe, foe, True, False))
+        bot.retreat = True
+        bot.movement = Mock()
+        bot.movement.unstuck_until = 0
+        bot.movement.avoid_shells.return_value = None
+        bot.movement.seek_cover.return_value = [0, 0]
+        bot.movement.combat_move.return_value = [1, 0]
+        action = bot.act(obs)
+        self.assertEqual(bot.mode, 'recover')
+        self.assertEqual(action['fire'], [False, False])
+        bot.retreat = False
+        obs['t'] += 6
+        self.assertEqual(bot.act(obs)['fire'], [False, False])
+        self.assertEqual(bot.mode, 'recover')
+        obs['self']['hp'] = obs['self']['max_hp'] * .8
+        bot.act(obs)
+        self.assertNotEqual(bot.mode, 'recover')
+
+    def test_squad_recovery_yields_to_close_threat_and_zone(self):
+        with patch.dict('os.environ', {'BOT_SQUAD_RECOVERY': 'cover'}):
+            bot = Controller(HELLO)
+        obs = observation()
+        obs.update(t=21, tick=2)
+        obs['self']['hp'] = obs['self']['max_hp'] * .45
+        foe = enemy(20)
+        bot.update_world = Mock()
+        bot.assess_combat = Mock(return_value=([foe], foe, foe, True, False))
+        bot.retreat = True
+        bot.movement = Mock()
+        bot.movement.unstuck_until = 0
+        bot.movement.avoid_shells.return_value = None
+        bot.movement.seek_cover.return_value = [0, 0]
+        bot.movement.combat_move.return_value = [1, 0]
+        bot.act(obs)
+        self.assertNotEqual(bot.mode, 'recover')
+        obs['self']['in_zone'] = False
+        obs['self']['pos'] = [480, 0, 0]
+        bot.hold = (*obs['zone']['center'], obs['zone']['radius'])
+        bot.movement.navigate.return_value = [-1, 0]
+        bot.act(obs)
+        self.assertEqual(bot.mode, 'zone')
+
     def test_gun_respects_final_laser_aim(self):
         obs = observation()
         me = obs['self']
