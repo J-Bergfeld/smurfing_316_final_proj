@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from bot.controller import Controller
-from bot.combat import aim_and_fire
+from bot.combat import aim_and_fire, apply_weapon_control, aim_at, intercept
 from bot.loadout import choose_loadout
 from bot.movement import Movement
 from test_bot import HELLO, enemy, observation
@@ -197,6 +197,42 @@ class ControllerTests(unittest.TestCase):
             self.assertFalse(aim_and_fire(me, foe, HELLO['config'])['fire'][0])
         with patch.dict('os.environ', {}, clear=True):
             self.assertFalse(aim_and_fire(me, foe, HELLO['config'])['fire'][0])
+
+    def test_dev_gun_aim_leads_and_checks_predicted_path(self):
+        obs=observation(); me=obs['self']; foe=enemy(100)
+        foe['vel']=[0,10,0]
+        gun=me['weapons'][0]
+        gun.update(kind='gun',ammo=12,reload=0,cooldown=0,stats=HELLO['config']['weapons']['gun'])
+        muzzle=[0,0,me['stats']['muzzle_height']]
+        point=intercept(muzzle,[100,0,HELLO['config']['mech']['height']/2],foe['vel'],gun['stats']['speed'])
+        me['aim']=aim_at(muzzle,point)
+        world=Mock(); world.shot_clear.return_value=False
+        with patch.dict('os.environ', {'BOT_AIM_MODEL':'dev'}):
+            action=aim_and_fire(me,foe,HELLO['config'],world=world)
+        self.assertAlmostEqual(action['aim'][0],me['aim'][0])
+        self.assertFalse(action['fire'][0])
+        world.shot_clear.assert_called_once_with(tuple(muzzle),point)
+        world.shot_clear.return_value=True
+        with patch.dict('os.environ', {'BOT_AIM_MODEL':'dev'}):
+            self.assertTrue(aim_and_fire(me,foe,HELLO['config'],world=world)['fire'][0])
+
+    def test_dev_reload_preserves_rounds_after_contact(self):
+        obs=observation(); obs['t']=30
+        gun=obs['self']['weapons'][0]
+        gun.update(kind='gun',ammo=4,reload=0,stats=dict(HELLO['config']['weapons']['gun'],damage=46.8))
+        foe=dict(enemy(60),hp=71.6)
+        bot=Controller(HELLO); bot.tracks[foe['id']]={'actor':foe,'seen':30,'los':False,'engage':True}
+        bot.last_hurt=30; bot.last_dealt=30
+        with patch.dict('os.environ', {'BOT_RELOAD_MODEL':'dev'}):
+            action={'move':[0,0],'fire':[False,False]}
+            apply_weapon_control(bot,obs,action,None,None,True)
+            self.assertFalse(action.get('reload',False))
+            gun['ammo']=0; action={'move':[0,0],'fire':[False,False]}
+            apply_weapon_control(bot,obs,action,None,None,True)
+            self.assertTrue(action['reload'])
+            gun['ammo']=4; obs['t']=34; action={'move':[0,0],'fire':[False,False]}
+            apply_weapon_control(bot,obs,action,None,None,True)
+            self.assertTrue(action['reload'])
 
     def test_movement_shares_controller_world_and_random_generator(self):
         bot = Controller(HELLO)

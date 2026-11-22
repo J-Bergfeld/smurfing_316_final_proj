@@ -16,7 +16,7 @@ class Controller:
         self.body_size = (self.cfg['mech']['radius'], self.cfg['mech']['height'])
         self.world.set_body_size(*self.body_size)
         self.tracks={}; self.items={}; self.hits={}; self.attacker_memory={}; self.kills=set(); self.initial=None; self.unexplained=0; self.ffa=False
-        self.last_hurt=-100.; self.last_threat=-100.; self.lose_at=-100.; self.retreat=False; self.hold=None; self.phase=None
+        self.last_hurt=-100.; self.last_dealt=-100.; self.last_threat=-100.; self.lose_at=-100.; self.retreat=False; self.hold=None; self.phase=None
         self.target_id=None; self.target_at=-100.; self.loot_id=None; self.loot_since=0; self.bad={}
         self.movement=Movement(self.world,self.cfg,self.rng)
         self.field = PositionalField(self.world) if os.getenv('BOT_POSITIONAL_FIELD') == '1' else None

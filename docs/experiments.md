@@ -2,6 +2,21 @@
 
 Practice scores are mean placement points; local simulator results are hypotheses, not official predictions. The current priority is improving practice placement to qualify. [Practice implementation plan](practice-improvement-plan.md) · [Historical experiments and calibration](experiments-history.md) · [Simulator limitations](simulator.md).
 
+## Jack test: dev gun aim and reload on Sam
+
+Based on `67f32ba`, the integrated controller uses the `dev` constant-velocity
+gun intercept and checks the predicted path, while retaining Sam's torso and
+other weapon logic. It avoids partial reloads during recent contact and starts
+empty-gun reloads. `BOT_AIM_MODEL=sam` and `BOT_RELOAD_MODEL=sam` restore the
+respective baseline decisions; the default for each is `dev`.
+
+Eight paired squad-proxy matches on seeds 424000–424007, using the packaged
+`67f32ba` settings, scored 3.875 (Sam), 4.125 (reload only), 4.375 (aim only),
+and 3.5 (both). There were no late or invalid replies. The combined paired
+delta was −0.375 ± 0.420 SE; these small and timing-sensitive samples do not
+establish official performance. Raw data and the screened diff are in ignored
+local files `mech-testing/jack-test/paired.json` and `candidate.patch`.
+
 ## Isolated wounded opponent trial
 
 Parent `835d4a7` scored **5.23** in official practice. The packaged candidate enables `BOT_FINISH_APPROACH=1`. During practice, a healthy mech with a ready weapon closes to a desired range of 20 m against a wounded, isolated opponent and defers cube collection during the approach. The hypothesis is that maintaining contact converts a retreating opponent into a placement point. The risk is taking extra damage before the next hunter arrives. Compare the candidate with its positional-field parent on the official platform. Official result pending.

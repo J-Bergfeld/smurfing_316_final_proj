@@ -143,6 +143,7 @@ def update_perception(state,obs):
             eye=(p[0],p[1],p[2]+me['stats']['eye_height']); at=(*item['pos'][:2],item['pos'][2]+1.5)
             if state.world.shot_clear(eye,at): del state.items[ident]
     for event in obs.get('events',[]):
+        if event['type']=='hit': state.last_dealt=t
         if event['type']=='damaged' and event.get('by') is not None:
             state.last_hurt=t
             state.attacker_memory[event['by']]=t
