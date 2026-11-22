@@ -106,3 +106,7 @@ and tune against official practice scores before relying on a policy. Record
 commit, profile, changed feature, submission time, and score for each run. The
 team reports an updated limit of six submissions per hour; confirm the current
 limit on the submission platform. The leaderboard ranks the best practice result.
+
+## Evaluation
+
+The default policy scored **3.90 local placement points** on 20 fresh squad-proxy matches. The simulator recorded 13 gun, five laser, one lightning and one zone elimination. The [baseline report](docs/evaluation_baseline.md) links the underlying terminal windows. The [audit](docs/evaluation_audit.md) measures runtime and the [evaluation commands](docs/evaluation_methodology.md) reproduce the baseline, replay focused scenarios, compare frozen candidates on paired seeds, and record manual official results.

@@ -25,7 +25,10 @@ def main():
     parser.add_argument("--opponent-python", type=Path, help="Python interpreter used for opponent entry points.")
     parser.add_argument("--opponent-image", action="append", default=[],
                         help="Locally built mechfight Docker image, for any language.")
+    parser.add_argument("--events", type=Path, help="Write compact versioned subject telemetry to a new JSONL file.")
+    parser.add_argument("--geometry-library", type=Path, help="Reuse a study-local library built from this simulator.")
     args = parser.parse_args()
+    run_start = time.perf_counter()
     if any(not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*=.*', value) for value in args.bot_env):
         parser.error('--bot-env must be NAME=VALUE')
     if len(args.opponent) + len(args.opponent_image) > 15:
@@ -50,9 +53,15 @@ def main():
         hello = json.loads(next(stream))
     hello["map"]["dir"] = str(kit / "arena")
     with tempfile.TemporaryDirectory() as tmp:
-        lib = Path(tmp) / "geometry.so"
-        subprocess.run(["cc", "-O3", "-shared", "-fPIC", str(sim / "local_sim/geometry.c"),
-                        "-lm", "-o", str(lib)], check=True)
+        if args.geometry_library:
+            lib = args.geometry_library.resolve(strict=True)
+            compile_seconds = 0.
+        else:
+            lib = Path(tmp) / "geometry.so"
+            compile_start = time.perf_counter()
+            subprocess.run(["cc", "-O3", "-shared", "-fPIC", str(sim / "local_sim/geometry.c"),
+                            "-lm", "-o", str(lib)], check=True)
+            compile_seconds = time.perf_counter() - compile_start
         arena = Map(kit / "arena", hello["config"], lib)
         roles = ["hunter", "looter", "edge", "camper"] * 3 + ["hunter", "looter", "edge"]
         entrants = [(str(bot), ['env', *args.bot_env, sys.executable, "-u", str(bot)], False)]
@@ -71,6 +80,10 @@ def main():
         names = {}
         with ExitStack() as cleanup:
             trace = cleanup.enter_context(args.trace.open("w", encoding="utf-8")) if args.trace else None
+            observer = None
+            if args.events:
+                from match_telemetry import Observer
+                observer = Observer(cleanup.enter_context(args.events.open("x", encoding="utf-8")), match)
             for slot, (name, command, docker) in zip([player.id, *match.order], entrants):
                 greeting = dict(hello, slot=slot, seed=((slot + 1) * 1779033703) % 2**32)
                 if docker:
@@ -81,6 +94,7 @@ def main():
                     raise SystemExit(f"Startup handshake failed for {name}")
                 clients[slot] = client
                 names[slot] = name
+            ready_seconds = time.perf_counter() - run_start
             place = None
             while place is None:
                 match.refresh_team()
@@ -97,6 +111,8 @@ def main():
                                                         "elapsed_ms":(time.perf_counter()-started)*1000,
                                                         "late":client.late-late_before,
                                                         "invalid":client.bad-bad_before}, separators=(",", ":")) + "\n")
+                            if observer and mech.id == player.id:
+                                observer.step(observation, mech.action, match.phase)
                             if client.dead:
                                 raise SystemExit(f"Bot stopped during match: {names[mech.id]}")
                         else:
@@ -113,7 +129,11 @@ def main():
             results = [dict(bot=names[i], slot=i, kills=m.kills, alive=m.life,
                             late=clients[i].late, invalid=clients[i].bad)
                        for i in clients if i != player.id for m in [match.players[i]]]
-            print(json.dumps(dict(seed=args.seed, place=place, points=16-place, kills=player.kills,
+            extra = {}
+            if observer:
+                extra = observer.finish(match, player)
+                extra.update(compile_seconds=compile_seconds, ready_seconds=ready_seconds)
+            print(json.dumps(dict(**extra, seed=args.seed, place=place, points=16-place, kills=player.kills,
                                   game_seconds=round(match.t, 2), late=subject_client.late,
                                   invalid=subject_client.bad, opponents=results)))
 

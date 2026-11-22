@@ -69,13 +69,26 @@ def summarize(rows):
 
 
 def compare(base, candidate):
-    b = {r['seed']: r['points'] for r in base}
-    c = {r['seed']: r['points'] for r in candidate}
-    if b.keys() != c.keys():
-        raise ValueError('paired variants must have identical seeds')
-    diffs = [c[seed]-b[seed] for seed in sorted(b)]
-    sem = statistics.stdev(diffs)/math.sqrt(len(diffs)) if len(diffs) > 1 else None
-    return {'delta': statistics.mean(diffs), 'se': sem, 'pairs': len(diffs)}
+    b = {r['seed']: r for r in base}
+    c = {r['seed']: r for r in candidate}
+    if not b or len(b) != len(base) or len(c) != len(candidate) or b.keys() != c.keys():
+        raise ValueError('paired variants must have identical, unique, nonempty seeds')
+    for seed in b:
+        if b[seed].get('initial_layout_sha256') != c[seed].get('initial_layout_sha256'):
+            raise ValueError(f'starting layout differs for seed {seed}')
+    per_seed = {s:c[s]['points']-b[s]['points'] for s in sorted(b)}
+    diffs = list(per_seed.values())
+    sd = statistics.stdev(diffs) if len(diffs) > 1 else None
+    if __package__:
+        from .diagnose import bootstrap_mean
+    else:
+        from diagnose import bootstrap_mean
+    return dict(delta=statistics.mean(diffs), median=statistics.median(diffs), sd=sd,
+                se=sd/math.sqrt(len(diffs)) if sd is not None else None, pairs=len(diffs),
+                win_fraction=sum(d>0 for d in diffs)/len(diffs), per_seed=per_seed,
+                bootstrap95=bootstrap_mean(diffs) if sd is not None else None,
+                worst_regressions=sorted(((s,d) for s,d in per_seed.items() if d<0),
+                                         key=lambda pair:pair[1])[:3])
 
 
 def interactions(variants):
