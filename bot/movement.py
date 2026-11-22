@@ -229,7 +229,10 @@ class Movement:
             if 'mortar' in target.get('weapons',[]): desired=max(desired,80)
         if obs['t']>=self.strafe_until:
             if self.rng.random()<.6: self.strafe=-self.strafe
-            self.strafe_until=obs['t']+.3+self.rng.random()*.7
+            if squad and os.getenv('BOT_SQUAD_STRAFE') == 'steady':
+                self.strafe_until=obs['t']+3+self.rng.random()*2
+            else:
+                self.strafe_until=obs['t']+.3+self.rng.random()*.7
         sx,sy=-(pos[1]-p[1])/max(d,1e-9)*self.strafe,(pos[0]-p[0])/max(d,1e-9)*self.strafe
         height=self.cfg['npc']['height'] if target['kind']=='npc' else self.cfg['mech']['height']*(1+target.get('cubes',0)*self.cfg['cubes'].get('size_per_cube',.05))
         center=(pos[0],pos[1],pos[2]+height*.5); z=obs['zone']; best=(-math.inf,[0.,0.])

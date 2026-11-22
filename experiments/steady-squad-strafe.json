@@ -1,0 +1,4 @@
+{
+  "A": {"root":"..", "env":{"BOT_NAV_METHOD":"legacy","BOT_GUN_AIM_CHECK":"actual","BOT_SUPPLY_DROPS":"0","BOT_CORNER_DUEL":"1","BOT_POSITIONAL_FIELD":"1"}, "hypothesis":"5.23 baseline settings"},
+  "B": {"root":"..", "env":{"BOT_NAV_METHOD":"legacy","BOT_GUN_AIM_CHECK":"actual","BOT_SUPPLY_DROPS":"0","BOT_CORNER_DUEL":"1","BOT_POSITIONAL_FIELD":"1","BOT_SQUAD_STRAFE":"steady"}, "hypothesis":"Maintain lateral movement for 3 to 5 seconds between voluntary direction reconsiderations against the coordinated squad"}
+}

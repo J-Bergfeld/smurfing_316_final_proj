@@ -12,11 +12,17 @@ Two 600-observation replay slices with clocks shifted to select practice for bot
 
 Commit `4933656` restored the packaged `835d4a7` policy and increased the practice target-selection bonus for a recent attacker from 40 to 160, retaining the near-lethal bonus. It passed the baseline's 102 tests and the restricted Docker protocol check (300/300 on-time replies). The user reported an official score of **4.90**, compared with 5.23 for `835d4a7`. This aggregate result does not establish causality, but does not justify retaining the trial; restore the 5.23 target weighting. Run ID, timestamp and scorer version were not supplied.
 
+## Steady squad strafe
+
+`BOT_SQUAD_STRAFE=steady` increases the interval between voluntary strafe-direction reconsiderations from 0.3–1 seconds to 3–5 seconds in squad combat. Existing wall-triggered reversals and FFA timing remain unchanged. The hypothesis is that more consistent lateral velocity reduces exposure to the coordinated house bots' projectile fire without giving up offense. The counter-hypothesis is that a predictable path or a persistent unfavorable direction makes incoming shots easier to land. This changes only the strafe timing on the `835d4a7` policy; the previous laser-timing and attacker-priority trials are disabled.
+
+Eight counterbalanced proxy pairs on 422650–422657 gave 4.625 points for baseline and 5.125 for the trial, a paired difference of +0.50 (95% bootstrap interval −0.875 to +1.75), four better, two tied and two worse. The trial averaged 0.375 more kills and 45.8 more seconds alive, but had 9 late and 8 invalid replies versus zero for the baseline; these timing differences confound the comparison. This small proxy screen does not predict the official score. Raw evidence: `mech-testing/steady-strafe-422650/report.json` (git-ignored). A focused timing check, the baseline's 102 tests, and the packaged restricted Docker replay passed; the replay answered 300/300 on time (maximum 28.6 ms). Official score pending.
+
 ## Laser timing trial
 
 On the `835d4a7` policy, `BOT_LASER_TIMING=reload` delays starting a laser charge in practice while the gun has ammunition, is not reloading and can reach the target. An already started charge completes; FFA behavior is unchanged. The hypothesis is that moving at full speed and keeping the shared torso on gun aim between reloads compensates for fewer laser shots. The counter-hypothesis is that losing laser damage makes fights longer. Across five old proxy traces, 382 observations had a visible or tracked mech, a loaded gun and a laser already charging; these are not official matches and do not measure missed shots.
 
-Eight counterbalanced proxy pairs on seeds 422600–422607 averaged 5.875 for the baseline and 6.25 for the trial, paired difference +0.375 (95% bootstrap interval −0.625 to +1.50), with three improved, three tied and two worse. Mean kills fell by 0.25 and survival rose by 10.9 seconds. Baseline had four late/invalid replies; trial had two. A protocol check ran concurrently during part of the panel, adding possible load confounding. This screen is small and cannot predict official score; the local proxy has poor historical calibration. Raw results: `mech-testing/laser-reload-screen-422600/report.json` (git-ignored). Official score is pending.
+Eight counterbalanced proxy pairs on seeds 422600–422607 averaged 5.875 for the baseline and 6.25 for the trial, paired difference +0.375 (95% bootstrap interval −0.625 to +1.50), with three improved, three tied and two worse. Mean kills fell by 0.25 and survival rose by 10.9 seconds. Baseline had four late/invalid replies; trial had two. A protocol check ran concurrently during part of the panel, adding possible load confounding. This screen is small and cannot predict official score; the local proxy has poor historical calibration. Raw results: `mech-testing/laser-reload-screen-422600/report.json` (git-ignored). The user reported **4.96** for `f2a61ab`; revert the trial.
 
 The focused weapon checks covered a loaded gun, reload, a charge already in progress and FFA. The baseline's 102-test suite passed with the factor enabled. The packaged restricted-container protocol replay answered 300/300 on time (maximum 31.3 ms).
 
@@ -32,6 +38,7 @@ Ten focused behavior checks passed. The packaged protocol check passed with 298 
 
 | Commit / settings | Score | Squad-proxy mean / official minus proxy | Status / provenance |
 | --- | ---: | --- | --- |
+| `f2a61ab`, laser during reload | 4.96 | 6.25, eight-pair proxy | User-reported official score; trial reverted. |
 | `4933656`, active attacker priority | 4.90 | — | User-reported official practice score; restore the `835d4a7` target weighting. |
 | `8d52f44`, dedicated practice policy | 5.00 | — | User-reported official practice score. |
 | `6d086c3`, reload behind cover | 5.19 | — | User-reported official practice score. Finished 0.04 below the `835d4a7` positional-field baseline. |
