@@ -83,6 +83,7 @@ class Movement:
     def __init__(self, world, config, rng):
         self.world=world; self.cfg=config; self.rng=rng
         self.nav_method=os.getenv('BOT_NAV_METHOD','spacing')
+        self.cornered_boost = os.getenv('BOT_CORNERED_BOOST') == '1'
         self.path=[]; self.path_goal=None; self.path_at=-100.
         self.strafe=1; self.strafe_until=0
         self.cover=None; self.cover_at=-100.
@@ -97,7 +98,8 @@ class Movement:
         if mode!='unstuck' and any(dodge):
             move=action['move']; mx,my=move[0]*.4+dodge[0]*.9,move[1]*.4+dodge[1]*.9; length=math.hypot(mx,my)
             action['move']=[mx/max(1,length),my/max(1,length)]
-            if laser and me['energy']>25: action['boost']=True
+            boost_dodge = laser or (self.cornered_boost and mode == 'cornered' and me['grounded'])
+            if boost_dodge and me['energy']>25: action['boost']=True
         if any(action['move']) and math.hypot(*me['vel'][:2])<1.2 and me['grounded']:
             if self.stuck_since<0: self.stuck_since=t
             elif t-self.stuck_since>.7:
