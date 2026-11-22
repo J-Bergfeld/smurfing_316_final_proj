@@ -4,21 +4,40 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 **Scoring context:** Unless explicitly marked builders-4, the official practice scores and comparisons in this document use the old scoring setup. The user reports that `835d4a7` was rescored at **5.21** under builders-4; its old score was **5.23**. Do not compare old scores directly with builders-4 scores.
 
+## Official practice — builders-4
+
+| Commit | Configuration | Score |
+| --- | --- | ---: |
+| `955e6bf` | Jack aim, corridor off, early drone off | **5.47** |
+| `26c9ad6` | Jack aim-only package | 5.42 |
+| `835d4a7` | Positional-field baseline, rescored | 5.21 |
+| `6e0c84c` | Jack aim with partial-cover aiming | 5.20 |
+| `a022b4a` | Jack aim, corridor on, early drone off | 5.05 |
+| `4d4d263` | Jack aim, corridor off, early drone on | 4.91* |
+
+Scores are user-reported, except the Jack-branch results recorded in its experiment notes. Run IDs and timestamps were not supplied. Builders-4 runs use independently sampled seeds, so differences do not establish causality. *The supplied hash for the 4.91 result did not resolve locally; `4d4d263` is the matching queued commit and should be confirmed.
+
 ## Ranked queue when official testing reopens
 
-**Recorded baseline:** `835d4a7`, 5.21 on builders-4 (5.23 on the old scorer). All five candidates below enable Jack's `BOT_AIM_MODEL=dev` and retain Sam's reload behavior. They run practice-only and are not suitable for qualifying FFA without a separate policy and test. Their commits are distinct packages on the `sam` branch, and none has an official builders-4 score recorded.
+**Recorded baselines:** `835d4a7`, 5.21 on builders-4 (5.23 on the old scorer); Jack's branch reports `26c9ad6`, 5.42 on builders-4. All five candidates below enable Jack's `BOT_AIM_MODEL=dev` and retain Sam's reload behavior. They run practice-only and are not suitable for qualifying FFA without a separate policy and test. Their commits are distinct packages on the `sam` branch.
 
 The organizers announced **builders-4**, with 96 fresh private random seeds per practice submission, and automatic rescoring of each team's picked or best builders-3 entry. Identical code keeps its first builders-4 score; resubmitting it does not yield an independent score. Verify the live quota before starting. Record the exact commit, settings, run ID, timestamp, scorer version, score and any per-match results or replays. Old scores are not directly comparable to builders-4 results. Fresh seeds make candidate comparisons unpaired. [Organizer announcement](https://www.joinbuilders.org/buildathon/leaderboard)
 
-1. **Aim with corridor:** `a022b4a` — corridor on, early drone off, optimized geometry. This is the control for items 2 and 5.
-2. **Aim without corridor:** `955e6bf` — corridor off, early drone off, optimized geometry. Compare with item 1 to investigate the corridor.
-3. **Aim with early drone:** `4d4d263` — corridor off, early drone on, optimized geometry. Compare with item 2 to investigate the early-drone preference.
+1. **Aim with corridor:** `a022b4a` — corridor on, early drone off, optimized geometry. User-reported builders-4 score: **5.05**; run ID and timestamp were not supplied. Compare with item 2 to investigate the corridor; this is also the control for item 5.
+2. **Aim without corridor:** `955e6bf` — corridor off, early drone off, optimized geometry. User-reported builders-4 score: **5.47**. Compare with item 3 to investigate early-drone preference and with item 1 to investigate the corridor. Run ID and timestamp were not supplied.
+3. **Aim with early drone:** `4d4d263` — corridor off, early drone on, optimized geometry. User-reported builders-4 score: **4.91**. The supplied hash was `d4d263b93ae`, which does not resolve locally; `4d4d263b93ae` is the matching queued commit. Confirm the submitted revision. Compare with item 2 to investigate the early-drone preference.
 4. **Aim with corridor and early drone:** `8a4db86` — corridor on, early drone on, optimized geometry. Together with items 1–3, this completes the corridor × drone comparison.
 5. **Aim with earlier geometry:** `a10db1f` — corridor on, early drone off, using the geometry and corridor planner from `ebf0354` before the `d0b451b` optimizations. Compare with item 1 to investigate those optimizations. Both retain the later early-drone code with the factor off.
 
 Each exact commit built for linux/amd64 and passed the restricted protocol replay with 300/300 on-time replies; maximum response times were 29.1, 28.8, 35.3, 28.5 and 35.8 ms respectively on this host under emulation. The fifth replay dropped one older queued observation. Each commit also passed the three focused aim tests. These checks do not establish placement or live-match latency.
 
 The user reports that `835d4a7` was rescored at 5.21 under builders-4. Record the run ID, timestamp and per-match results if available. Do not spend a slot on an identical-code repeat to seek another draw.
+
+Jack's branch (`609162f`) records **5.42** for `26c9ad6` under builders-4 and **5.20** for the later partial-cover aiming trial `6e0c84c`; these scores are reported without run IDs or timestamps. The 4.91 candidate also changes practice behavior and drone preference, so its result does not isolate aim. The aim portion of `4d4d263` matches `26c9ad6` when enabled; its default switch differs but the candidate Dockerfile explicitly selects `dev`. It intentionally retains Sam reload behavior, as does Jack's aim-only package.
+
+The user-reported 5.47 for `955e6bf` versus 4.91 for `4d4d263` is an observed difference of +0.56 with the early-drone preference off. These packages differ only in that switch, but their builders-4 runs use independent random seeds; the aggregate difference does not establish a causal effect. The 5.47 and Jack's 5.42 also come from different packages and independent runs.
+
+The user-reported 5.05 for `a022b4a` versus 5.47 for `955e6bf` is an observed difference of −0.42 with the corridor enabled. These packages differ only in that switch; their independently sampled builders-4 runs do not establish a causal effect. Retain `955e6bf` as the stronger reported result.
 
 Do not prioritize rerunning the recent failed packages without a new reason: `e922fb0` (steady strafe, 4.65), `f2a61ab` (laser timing, 4.96), `4933656` (attacker priority, 4.90) and `8d52f44` (dedicated practice policy, 5.00) are user-reported results. In particular, do not bundle another strafe change into the corridor or farming trials. A later strafe study should first measure actual movement, overrides, hits, damage and firing time; the edited strafe timer does not by itself determine the movement command.
 
