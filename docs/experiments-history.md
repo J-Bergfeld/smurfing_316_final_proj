@@ -56,6 +56,8 @@ Decision: promote, reject, investigate, or retest; next question:
 
 ## Official practice and candidate history
 
+The official practice scores and comparisons in this historical record use the old scoring setup. The user reports a separate builders-4 rescore of **5.21** for `835d4a7`; do not compare it directly with the old scores.
+
 ### Candidate: shared torso gun aim
 
 - Parent: `184bb55`, reported official score 4.88. The integrated policy checks

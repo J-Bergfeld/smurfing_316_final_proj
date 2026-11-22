@@ -184,10 +184,13 @@ def aim_and_fire(me, target, config, squad=False, world=None):
     if kind=='mech': radius,height=config['mech']['radius']*scale,config['mech']['height']*scale
     elif kind=='npc': radius,height=config['npc']['radius'],config['npc']['height']
     else: radius,height=config['crates']['radius'],config['crates']['height']
+    use_dev_aim=os.getenv('BOT_AIM_MODEL','sam') == 'dev'
     muzzle=(p[0]+vel[0]*.075,p[1]+vel[1]*.075,p[2]+st['muzzle_height'])
+    gun_muzzle=(p[0],p[1],p[2]+st['muzzle_height']) if use_dev_aim else muzzle
     center=(pos[0],pos[1],pos[2]+height*.5); dist=math.hypot(center[0]-p[0],center[1]-p[1])
     weapons=me['weapons']; gun=next((w for w in weapons if w and w['kind']=='gun'),None)
-    gy,gp=lead(muzzle,center,tv,gun['stats']['speed'],abs(tv[2])<.5) if gun else (0.,0.)
+    gun_point=intercept(gun_muzzle,center,tv,gun['stats']['speed']) if gun and use_dev_aim else None
+    gy,gp=aim_at(gun_muzzle,gun_point) if gun_point is not None else (lead(muzzle,center,tv,gun['stats']['speed'],abs(tv[2])<.5) if gun else (0.,0.))
     dx=center[0]+tv[0]*.125-muzzle[0]; dy=center[1]+tv[1]*.125-muzzle[1]
     hy,hp=math.atan2(dy,dx),math.atan2(center[2]-muzzle[2],math.hypot(dx,dy))
     aim=[gy,gp] if gun else [hy,hp]; fire=[False,False]
@@ -199,6 +202,8 @@ def aim_and_fire(me, target, config, squad=False, world=None):
         if wk=='gun':
             fire[i]=bool(dist<=s['range']*.96 and w.get('ammo',0)>0 and w.get('reload',0)<=0 and
                          max(0.,ey(gy)-st['turn_rate']*.05)<tol_y and max(0.,ep(gp)-st['pitch_rate']*.05)<tol_p)
+            if fire[i] and use_dev_aim and world is not None:
+                fire[i]=world.shot_clear(gun_muzzle,gun_point)
         elif wk=='lightning':
             fire[i]=bool(dist<s['range']-1.5 and ey(hy)<math.radians(s['cone_deg'])*.5-.05 and me['energy']>=s['energy'])
         elif wk=='laser' and kind=='mech' and dist<=s['range']*.97:

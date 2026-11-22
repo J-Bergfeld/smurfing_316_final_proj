@@ -16,7 +16,7 @@ python3 check/check.py --map-dir /arena -- docker run --rm -i --network none --c
 
 The last command is what the scorer runs before your matches: no network, 1 CPU, 512 MB, a read-only disk except `/tmp`, and an unprivileged user (uid 65534, not root). A bot that passes without those flags can still fail with them. The usual causes: writing a file anywhere but `/tmp`, and installing packages for root only (`pip install --user`, or into `/root`). Install them system-wide in the Dockerfile.
 
-2. Make a public GitHub repository whose top level holds the files of `python/` (or `ts/`), so its `Dockerfile` is at the top. Push it and submit its address on the Mech Royale track page. The repository may hold 20 MB at the commit you submit. The scorer builds it on linux/amd64 with the network on, and the build must finish in 10 minutes. Each submission plays 48 practice matches against built-in bots.
+2. Make a public GitHub repository whose top level holds the files of `python/` (or `ts/`), so its `Dockerfile` is at the top. Push it and submit its address on the Mech Royale track page. The repository may hold 20 MB at the commit you submit. The scorer builds it on linux/amd64 with the network on, and the build must finish in 10 minutes. The organizers announced 96 practice trials on fresh random seeds for builders-4; check the track for current rules.
 
 ### What `check.py` verifies
 

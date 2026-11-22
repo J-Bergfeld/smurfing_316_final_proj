@@ -2,9 +2,40 @@
 
 Practice scores are mean placement points; local simulator results are hypotheses, not official predictions. The current priority is improving practice placement to qualify. [Practice implementation plan](practice-improvement-plan.md) · [Historical experiments and calibration](experiments-history.md) · [Simulator limitations](simulator.md).
 
-## Python practice policy
+**Scoring context:** Unless explicitly marked builders-4, the official practice scores and comparisons in this document use the old scoring setup. The user reports that `835d4a7` was rescored at **5.21** under builders-4; its old score was **5.23**. Do not compare old scores directly with builders-4 scores.
 
-The packaged Python controller starts in practice mode on tick one. Movement, target selection, firing and loadout share the same perception and routing code with FFA. The first uncredited decrease in the alive count selects FFA actions immediately. Five consecutive observations with a discrepancy lock in FFA. An explicit `BOT_PROFILE=final` selects FFA throughout. Compare official placement against `835d4a7` (5.23).
+## Ranked queue when official testing reopens
+
+**Recorded baseline:** `835d4a7`, 5.21 on builders-4 (5.23 on the old scorer); keep it available. **Control:** `c93c3f0`, unscored, practice-only with the revised corridor and geometry optimizations enabled; `BOT_EARLY_DRONE` is off. The working tree adds Jack's aim-only model on top of that control and enables it in the Dockerfile. It is not the exact `26c9ad6` package: the movement, practice policy and other settings differ. Commit and validate the working tree before submitting it. These practice-only candidates are not suitable for qualifying FFA without a separate policy and test.
+
+The organizers announced **builders-4**, with 96 fresh private random seeds per practice submission, and automatic rescoring of each team's picked or best builders-3 entry. Identical code keeps its first builders-4 score; resubmitting it does not yield an independent score. Verify the live quota and the team's rescore before starting. Capture commit, packaged settings, run ID, timestamp, scorer version, score and any per-match results or replays. Older builders-3 scores are not directly comparable to builders-4 results. Run the restricted Docker/protocol check on each exact candidate. The local proxy is useful for behavior checks, not for ranking these submissions. [Organizer announcement](https://www.joinbuilders.org/buildathon/leaderboard)
+
+1. **Compare the aim port with `c93c3f0`.** Submit the committed aim-port package and `c93c3f0` under builders-4, recording exact revisions. The port changes gun intercept and checks the predicted shot path; reload behavior remains Sam's. Both use the corridor and keep early-drone preference off. The earlier `c93c3f0` AMD64 restricted replay passed; validate the exact new package too. Random seeds make the comparison unpaired.
+2. **Practice-only control without the new corridor: create a new candidate commit from `c93c3f0` with `BOT_FIGHT_CORRIDOR=0` and leave `BOT_EARLY_DRONE` unset.** Keep `BOT_POSITIONAL_FIELD=1`, `BOT_CORNER_DUEL=1`, practice-only behavior and the geometry code unchanged. This compares against step 1 to estimate the corridor's contribution under the current practice policy; it is not the original 5.23 build. No such packaged commit or official score exists yet. Validate the exact image before submitting.
+3. **Early-drone-only candidate: create a new commit from step 2 with `BOT_EARLY_DRONE=1`, leaving `BOT_FIGHT_CORRIDOR=0`.** This isolates the opening drone preference from the new corridor on the same practice-only, optimized parent. Compare to step 2; it still includes the existing positional field and corner duel. It has scenario and local Docker checks, but no packaged official commit or official score. Run the checks on the exact new commit. A local `docker run -e` does not change the submitted Dockerfile.
+4. **If step 1 or step 3 is promising, test the combination:** create a commit from `c93c3f0` with `BOT_EARLY_DRONE=1`, retaining `BOT_FIGHT_CORRIDOR=1`. Compare to steps 1–3; this completes the four-cell corridor × farming comparison. The combination is unscored and may interact adversely. Fresh random seeds mean these are unpaired aggregate comparisons; use per-match results if available. Do not expect resubmitting identical code to supply a confirmation score under builders-4.
+5. **Diagnostic geometry comparison, if slots remain:** submit `ebf0354` and compare it with `d0b451b` or `c93c3f0` under the same scorer. `ebf0354` has practice-only behavior and the revised corridor before the later geometry/planner optimizations; `d0b451b` adds those optimizations. `c93c3f0` also contains the early-drone code with its factor off, so this is a near-equivalent packaged comparison, not literally the same code. This asks whether timing and geometry matter; neither result proves the corridor is good.
+6. **Record the builders-4 baseline:** the user reports that `835d4a7` was rescored at 5.21. Record the run ID, timestamp and per-match results if available. Do not spend a slot on an identical-code repeat to seek another draw; the organizer announcement says it keeps its first builders-4 score.
+
+Do not prioritize rerunning the recent failed packages without a new reason: `e922fb0` (steady strafe, 4.65), `f2a61ab` (laser timing, 4.96), `4933656` (attacker priority, 4.90) and `8d52f44` (dedicated practice policy, 5.00) are user-reported results. In particular, do not bundle another strafe change into the corridor or farming trials. A later strafe study should first measure actual movement, overrides, hits, damage and firing time; the edited strafe timer does not by itself determine the movement command.
+
+## Jack's aim-only model
+
+Jack's `26c9ad6` packages the aim model introduced in `40bfccc`, with Sam reload behavior. This working-tree port adds only the gun aim portion to `c93c3f0`: `BOT_AIM_MODEL=dev` uses a constant-velocity intercept from the observed muzzle and checks the predicted shot path; `sam` or an unset variable retains the original aim. The Dockerfile explicitly enables `dev`. It does not include Jack's reload policy or the later upper-body aiming change. The model can withhold a shot when the predicted center is obstructed, including when the target's upper body is visible; it may also change leading accuracy. These effects and placement remain unmeasured on this parent.
+
+Jack's eight-seed local screen on a different parent found aim-only 5.0 versus Sam control 6.25 (paired −1.25, SE 1.49); it was sequential, one aim response was late, and simulator metadata was incomplete. It cannot rank the new package or predict builders-4 scores. The prior combined aim-and-reload score of 5.15 was also under the old scorer and cannot isolate either change.
+
+The working-tree linux/amd64 image passed the restricted protocol replay: 300/300 on time, maximum 28.6 ms under emulation on this host. Three focused aim tests and 17 controller tests passed with the model enabled. The full suite had five failures in finish-approach, reload-cover and historical practice-routing tests; the unchanged `c93c3f0` control has the same five failures. Recheck the exact committed image before submission; these checks do not establish placement strength.
+
+## Reference comparison and latency
+
+The local reference documents a Python approximation of Giddy `e19e3c8`; the current integrated policy shares substantial tactical structure but has diverged, and is not an equivalent reproduction. For a read-only comparison, the locally vendored Go driver and the packaged Python image were run separately against the same 300-observation checker stream, with linux/amd64 Docker, one CPU, 512 MB and the same mounted map. Go returned 300/300 on time (p99 2.8 ms, max 10.0 ms). Python returned 299/300 on time in one run (p99 29.7 ms, max 84.8 ms), then 300/300 on a repeat (p99 23.9 ms, max 28.4 ms). Measurements were on this host under emulation and depend on load; the static stream does not establish official late rates or the effect on placement. The Go and Python builds also have different policies, so this is not a controlled language-only comparison.
+
+On the same 300 fixed observations, the two policies' move directions were within 20 degrees on 97 of 297 observations where both moved, and their fire decisions agreed on 36 of 59 observations where either fired. This is not closed-loop parity or an estimate of score. The current Python build forces practice from tick one, while the Go reference infers the mode and uses other settings, so the divergence is expected and not attributable solely to Go versus Python.
+
+## Historical Python practice policy (`8d52f44`)
+
+That historical packaged controller starts in practice mode on tick one. Movement, target selection, firing and loadout share the same perception and routing code with FFA. The first uncredited decrease in the alive count selects FFA actions immediately. Five consecutive observations with a discrepancy lock in FFA. An explicit `BOT_PROFILE=final` selects FFA throughout. These are historical `8d52f44` behaviors, not the current practice-only policy. Compare its official placement against `835d4a7` (5.23).
 
 Two 600-observation replay slices with clocks shifted to select practice for both policies matched firing on all 1,200 decisions and movement within 0.2 vector distance on 1,199. In an unmodified 2,691-tick recording, the overlapping practice interval matched firing on 1,762/1,762 ticks and movement on 1,674/1,762. The packaged protocol check answered 299/300 observations within 50 ms, with one late response. The user reported **5.00** for `8d52f44`.
 
@@ -71,6 +102,8 @@ Ten focused behavior checks passed. The packaged protocol check passed with 298 
 ## Scoreboards
 
 ### Official practice
+
+The following table records **old scoring setup** results. The separate builders-4 rescore of `835d4a7` is **5.21**, user-reported; its run ID and timestamp were not supplied.
 
 | Commit / settings | Score | Squad-proxy mean / official minus proxy | Status / provenance |
 | --- | ---: | --- | --- |
