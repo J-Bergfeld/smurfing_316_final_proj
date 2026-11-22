@@ -6,6 +6,8 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 ## Official practice — builders-4
 
+**Follow-up:** User reports `c6053f8` scored **5.06**. Its submission files match `5801ebd`, which enables supply drops on the 5.47 `955e6bf` baseline. The observed difference is −0.41 on independent private seeds; it does not prove a causal loss. Keep 5.47 as the best reported result. Next candidate disables corner duel on the exact 5.47 runtime, with supply drops off. User also reports `25c82cd` scored 5.26; it uses a different source tree and enables finish priority. Run IDs and timestamps were not supplied.
+
 | Commit | Configuration | Score |
 | --- | --- | ---: |
 | `955e6bf` | Jack aim, corridor off, early drone off | **5.47** |
