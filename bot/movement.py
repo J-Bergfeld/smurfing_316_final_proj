@@ -157,6 +157,13 @@ class Movement:
         self.path = []
         return [0., 0.]
 
+    def blocks_hunter(self, hunter, point, stats):
+        pos = hunter['pos']
+        scale = 1 + hunter.get('cubes', 0) * self.cfg['cubes']['size_per_cube']
+        muzzle = (*pos[:2], pos[2] + self.cfg['mech']['muzzle_height'] * scale)
+        chest = (*point, self.world.walk_at(*point) + stats['height'] * .6)
+        return not self.world.shot_clear(muzzle, chest)
+
     def isolate_hunter(self, obs, attackers):
         """Find a short ground step with exactly one incoming firing line."""
         me, zone = obs['self'], obs['zone']
