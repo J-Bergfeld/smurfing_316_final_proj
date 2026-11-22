@@ -6,6 +6,8 @@ Practice scores are mean placement points; local simulator results are hypothese
 
 ## Official practice — builders-4
 
+**Positional-field follow-up:** User reports `a8a9e91` scored **5.08** with positional field disabled, compared with 5.47 for `955e6bf` and 4.95 for `e331335` with corner duel disabled. These are independent-seed results, not proof of causality. Keep both tactics on for the next test. The next candidate removes the gun-only magazine priority, keeping the fixed upgrade order; it changes only `choose_loadout` on the 5.47 baseline. Earlier magazine comparisons were under the old scorer. Run IDs and timestamps were not supplied.
+
 **Corner-duel follow-up:** User reports `e331335` scored **4.95** with corner duel off on the `955e6bf` baseline, versus 5.47 with it on. These runs use independent private seeds, so the observed −0.52 does not prove the causal effect. Next test keeps corner duel on and disables the positional field alone. Submission time and run ID were not supplied.
 
 **Follow-up:** User reports `c6053f8` scored **5.06**. Its submission files match `5801ebd`, which enables supply drops on the 5.47 `955e6bf` baseline. The observed difference is −0.41 on independent private seeds; it does not prove a causal loss. Keep 5.47 as the best reported result. Next candidate disables corner duel on the exact 5.47 runtime, with supply drops off. User also reports `25c82cd` scored 5.26; it uses a different source tree and enables finish priority. Run IDs and timestamps were not supplied.
