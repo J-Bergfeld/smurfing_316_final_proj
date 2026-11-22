@@ -46,13 +46,17 @@ def pressure_pickup(kind, weapons):
     return (True, slot) if values[kind] > value + .3 else (False, None)
 
 
-def choose_loadout(obs, config, pressure=False):
+def choose_loadout(obs, config, pressure=False, state=None):
     out={}
     me=obs['self']; p=me['pos']
     pickup_value = {'gun': 2., 'lightning': 2.1, 'laser': 2.4, 'mortar': 2.6}
     best_pickup_value = -1.
-    for pickup in obs.get('pickups',[]):
-        if math.dist(p[:2],pickup['pos'][:2])>config['loot']['pickup_radius']-.3 or abs(p[2]-pickup['pos'][2])>3.6: continue
+    pickups = obs.get('pickups',[])
+    if pressure and state is not None and hasattr(state, 'items'):
+        pickups = [item for kind,item,seen in state.items.values() if kind == 'pickups' and obs['t']-seen <= .5]
+    for pickup in pickups:
+        if pressure and state is not None and obs['t'] < getattr(state, 'pressure_take_until', -1): break
+        if math.dist(p[:2],pickup['pos'][:2])>config['loot']['pickup_radius']-.3 or abs(p[2]-pickup['pos'][2])>(3.7 if pressure else 3.6): continue
         held={w['kind'] for w in me['weapons'] if w}; kind=pickup['kind']
         if pressure:
             wanted, replacement = pressure_pickup(kind, me['weapons'])
@@ -71,6 +75,8 @@ def choose_loadout(obs, config, pressure=False):
         out['take']=pickup['id']
         if current is not None: out['drop']=1
         break
+    if pressure and state is not None and 'take' in out:
+        state.pressure_take_until = obs['t'] + .25
     if obs.get('offer'):
         if pressure:
             values = {'sensors': .98, 'gyros': .95, 'jets': .92, 'mortar_splash': .90,
@@ -97,7 +103,7 @@ def pressure_objective(state, obs, hp, danger):
     """Score useful nearby items by value per estimated collection time."""
     me, t, zone = obs['self'], obs['t'], obs['zone']
     pos = me['pos']; speed = max(1., me['stats']['walk_speed'])
-    brawl = state.ffa or t < 6
+    brawl = obs['alive'] > 2 and (state.ffa or t < 6 or t-getattr(state, 'credit_absorbed_at', -100) < 25)
     radius = 150 if obs['alive'] <= 2 else 220 if brawl else 250
     want_cubes = 40 if obs['alive'] <= 2 else 10 if brawl else 26
     candidates = list(state.items.items())
@@ -134,11 +140,33 @@ def pressure_objective(state, obs, hp, danger):
         free = state.world.nearest_free(state.world.cell(*item['pos'][:2]))
         if free is None or (grid and grid['component'][free[1]*grid['nx']+free[0]] != component): continue
         travel = d*1.25/speed + handling
-        if t+travel+12 > zone_deadline(state.hold, zone, *item['pos'][:2], 6): continue
+        # Estimate the circle at arrival plus the reference's slack. The
+        # current observed circle is the starting point for interpolation.
+        x,y=item['pos'][:2]
+        if math.hypot(x-zone['center'][0],y-zone['center'][1]) > zone['radius']-6: continue
+        future=t+travel+12
+        if future>zone['shrink_start']:
+            duration=zone['shrink_end']-zone['shrink_start']
+            fraction=max(0.,min(1.,(future-zone['shrink_start'])/duration)) if duration>0 else 1.
+            cx=zone['center'][0]+(zone['next_center'][0]-zone['center'][0])*fraction
+            cy=zone['center'][1]+(zone['next_center'][1]-zone['center'][1])*fraction
+            r=zone['radius']+(zone['next_radius']-zone['radius'])*fraction
+            if math.hypot(x-cx,y-cy)>r-6: continue
         if kind != 'cubes' and any(tr['actor']['kind'] == 'mech' and t-tr['seen'] < 6
                                    and math.dist(tr['actor']['pos'][:2], item['pos'][:2]) < 45
                                    for tr in state.tracks.values()): value *= .35
         score = value/(travel+1.5) * (1.25 if ident == state.loot_id else 1.)
+        if brawl and score>best_score:
+            for tr in state.tracks.values():
+                actor=tr['actor']
+                if actor['kind']!='mech' or t-tr['seen']>4: continue
+                if math.dist(actor['pos'][:2],item['pos'][:2])>=230: continue
+                scale=1+actor.get('cubes',0)*state.cfg['cubes'].get('size_per_cube',.05)
+                eye=(*actor['pos'][:2],actor['pos'][2]+8*scale)
+                target=(x,y,item['pos'][2]+4.5)
+                if state.world.shot_clear(eye,target):
+                    score*=.5
+                    break
         if score > best_score:
             best, best_score = (ident, kind, item, d, seen), score
     return best

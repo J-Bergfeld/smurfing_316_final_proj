@@ -134,12 +134,20 @@ def update_perception(state,obs):
         los=state.world.shot_clear(muzzle,center)
         if not los and actor['kind']=='mech': los=state.world.shot_clear(muzzle,(*actor['pos'][:2],actor['pos'][2]+height*.85))
         state.tracks[actor['id']]={'actor':actor,'seen':t,'los':los}
+    if getattr(state, 'decision_policy', '') == 'pressure':
+        eye=(p[0],p[1],p[2]+me['stats']['eye_height'])
+        for ident,tr in list(state.tracks.items()):
+            actor=tr['actor']
+            if actor['kind'] != 'npc' or tr['seen'] == t or math.dist(p[:2],actor['pos'][:2]) >= 40: continue
+            target=(*actor['pos'][:2],actor['pos'][2]+state.cfg['npc']['height']*.5)
+            if state.world.shot_clear(eye,target): del state.tracks[ident]
     state.tracks={k:v for k,v in state.tracks.items() if t-v['seen']<=(120 if v['actor']['kind']=='npc' else 20)}
     for typ in ('crates','cubes','pickups'):
         seen={item['id'] for item in obs.get(typ,[])}
         for item in obs.get(typ,[]): state.items[item['id']]=(typ,item,t)
         for ident,(kind,item,when) in list(state.items.items()):
-            if kind!=typ or ident in seen or t-when<=.35 or math.dist(p[:2],item['pos'][:2])>=40: continue
+            grace = 0 if getattr(state, 'decision_policy', '') == 'pressure' else .35
+            if kind!=typ or ident in seen or t-when<=grace or math.dist(p[:2],item['pos'][:2])>=40: continue
             eye=(p[0],p[1],p[2]+me['stats']['eye_height']); at=(*item['pos'][:2],item['pos'][2]+1.5)
             if state.world.shot_clear(eye,at): del state.items[ident]
     for event in obs.get('events',[]):

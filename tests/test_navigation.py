@@ -2,6 +2,8 @@
 import unittest
 import random
 import time
+import math
+from collections import defaultdict
 from unittest.mock import Mock
 from bot.movement import Movement
 from bot.geometry import Arena
@@ -81,6 +83,17 @@ class NavigationTests(unittest.TestCase):
         self.assertGreater(vx, 0.9)
         self.assertAlmostEqual(vx*vx + vy*vy, 1.)
 
+    def test_pressure_kite_opens_distance_and_circles_in_band(self):
+        world = Mock()
+        world.line_walkable.return_value = True
+        movement = Movement(world, HELLO['config'], random.Random(1))
+        obs = {'t': 1., 'self': {'pos': [0, 0, 0], 'grounded': True}}
+        close = movement.pressure_kite(obs, {'pos': [50, 0, 0]})
+        self.assertLess(close[0], -.9)
+        circling = movement.pressure_kite(obs, {'pos': [160, 0, 0]})
+        self.assertAlmostEqual(circling[0], 0.)
+        self.assertAlmostEqual(abs(circling[1]), 1.)
+
     def test_pressure_steering_respects_an_obstructed_direction(self):
         world = Mock()
         world.walk_at.return_value = 0
@@ -90,6 +103,33 @@ class NavigationTests(unittest.TestCase):
         obs = observation()
         vx, vy = movement.pressure_steer(obs, (1., 0.))
         self.assertFalse(vx > .5 and abs(vy) < .1)
+
+    def test_pressure_steering_avoids_a_predicted_projectile(self):
+        world = Mock()
+        world.walk_at.return_value = 0
+        world.cell.side_effect = lambda x, y: (int(round(x)), int(round(y)))
+        world.free_cell.return_value = True
+        movement = Movement(world, HELLO['config'], random.Random(1))
+        obs = observation()
+        obs['self']['pos'] = [0, 0, 0]
+        obs['self']['vel'] = [0, 0, 0]
+        obs['projectiles'] = [{'kind': 'gun', 'pos': [20, 0, 4], 'vel': [-50, 0, 0]}]
+        vx, vy = movement.pressure_steer(obs, (1., 0.))
+        self.assertGreater(abs(vy), .5)
+
+    def test_route_steering_is_gated_and_does_not_replace_combat(self):
+        movement = Movement(Mock(), HELLO['config'], random.Random(1))
+        movement.pressure_route_steer = True
+        movement.pressure_steer = Mock(return_value=[0., 1.])
+        movement.avoid_projectiles = Mock(return_value=([0., 0.], False))
+        obs = observation()
+        action = {'move': [1., 0.], 'jump': False, 'boost': True}
+        movement.apply_evasion_and_recovery(obs, action, 'roam')
+        self.assertEqual(action['move'], [0., 1.])
+        movement.pressure_steer.assert_called_once_with(obs, [1., 0.], True)
+        movement.pressure_steer.reset_mock()
+        movement.apply_evasion_and_recovery(obs, action, 'fight')
+        movement.pressure_steer.assert_not_called()
 
     def test_roof_plan_waits_for_clearance_then_jumps(self):
         movement = Movement(Arena(HELLO['map']['dir']), HELLO['config'], random.Random(1))
@@ -103,6 +143,44 @@ class NavigationTests(unittest.TestCase):
         self.assertEqual(climbing['mode'], 'roof-climb')
         self.assertTrue(climbing['jump'])
         self.assertGreater(climbing['move'][1], .9)
+
+    def test_deeper_cover_keeps_distance_from_nearby_attacker(self):
+        world = Mock()
+        world.shot_clear.return_value = False
+        world.cell.side_effect = lambda x, y: (round(x/2), round(y/2))
+        world.cell_pos.side_effect = lambda cell: (2*cell[0], 2*cell[1])
+        world.nearest_free.return_value = (0, 0)
+        world.free_cell.return_value = True
+        world.walk_at.return_value = 0
+        world._surface = defaultdict(float)
+        movement = Movement(world, HELLO['config'], random.Random(1))
+        movement.navigate = Mock(return_value=[1., 0.])
+        obs = observation(); obs['t'] = 10
+        obs['self']['pos'] = [0, 0, 0]
+        obs['zone'].update(center=[0, 0], radius=500, next_center=[0, 0], next_radius=400)
+        attacker = {'pos': [-10, 0, 0], 'cubes': 0}
+        movement.action_deadline = time.perf_counter()+.1
+        self.assertEqual(movement.seek_cover(obs, [attacker], deeper=True), [1., 0.])
+        chosen = movement.navigate.call_args.args[1]
+        self.assertGreaterEqual(math.dist(chosen, attacker['pos'][:2]), 28.)
+
+    def test_roof_plan_accepts_a_different_roof_after_landing(self):
+        world = Mock()
+        roof = {'kind': 'building', 'top': 20, 'box': [-10, -10, 10, 10]}
+        world.prisms = [roof]
+        world.solids.return_value = [roof]
+        world.ground.return_value = 0
+        world.standable.return_value = True
+        movement = Movement(world, HELLO['config'], random.Random(1))
+        movement.roof_plan = {'id': 7, 'inside': (1, 1), 'started': 1,
+                              'last_step': 1, 'state': 'approach'}
+        obs = observation(); obs['t'] = 2
+        obs['self']['pos'] = [0, 0, 20]
+        obs['zone']['next_center'] = [0, 0]
+        obs['zone']['next_radius'] = 100
+        result = movement.pressure_roof_step(obs)
+        self.assertEqual(result['mode'], 'roof')
+        self.assertEqual(movement.roof_plan['id'], 0)
 
 
 if __name__ == '__main__': unittest.main()

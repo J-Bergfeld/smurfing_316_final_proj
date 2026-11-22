@@ -5,7 +5,7 @@ import random
 import time
 
 from .geometry import Arena, angle_diff, zone_goal, zone_deadline
-from .combat import Combat, assess_combat, assess_pressure, apply_weapon_control
+from .combat import Combat, assess_combat, assess_pressure, apply_weapon_control, pressure_advantage, pressure_dps
 from .loadout import choose_loadout, choose_objective, pressure_pickup
 from .movement import Movement
 from .positional_field import PositionalField
@@ -34,7 +34,13 @@ class Controller:
         self.lightning_close = os.getenv('BOT_LIGHTNING_CLOSE') == '1'
         self.pressure_policy = os.getenv('BOT_PRESSURE_POLICY') == '1'
         self.decision_policy = os.getenv('BOT_DECISION_POLICY', 'classic')
+        self.exchange_model = os.getenv('BOT_PRESSURE_EXCHANGE') == '1'
         self.recent_damage = []
+        self.unseen_hit_at = -100.
+        self.unseen_hit_bearing = 0.
+        self.unseen_hit_distance = 115.
+        self.unseen_hit_id = None
+        self.unseen_hit_position = None
         self.pressure_aim_times = {}
         self.pressure_engage_times = {}
         self.retreat_started = -100.
@@ -51,6 +57,7 @@ class Controller:
         self.nav_method=os.getenv('BOT_NAV_METHOD','spacing')
         self.recovery_since=None; self.recovery_cooldown=-100.
         self.seen_cells={}; self.roam_cell=None; self.roam_at=-100.
+        self.pressure_zone_key=None; self.pressure_zone_goal=None; self.pressure_zone_at=-100.
 
     def mark_exploration(self, obs):
         """Remember recently visible 32 m exploration cells."""
@@ -103,6 +110,52 @@ class Controller:
         if not choices: return None
         _,i,j,cell=min(choices); self.roam_cell=(i,j); self.roam_at=t
         return world.cell_pos(cell)
+
+    def pressure_zone(self, obs):
+        """Estimate the shrinking edge and a reachable point in the next circle."""
+        z=obs['zone']; me=obs['self']; x,y=me['pos'][:2]; t=obs['t']
+        center=z['center']; nxt=z['next_center']; radius=z['next_radius']
+        out_cur=math.hypot(x-center[0],y-center[1])-z['radius']
+        out_next=math.hypot(x-nxt[0],y-nxt[1])-radius
+        start=max(t,z['shrink_start']); passing=math.inf
+        if out_cur>0: passing=0.
+        elif out_next>0 and z['shrink_end']<=start: passing=0.
+        elif out_next>0:
+            for i in range(1,51):
+                f=i/50
+                cx=center[0]+(nxt[0]-center[0])*f; cy=center[1]+(nxt[1]-center[1])*f
+                r=z['radius']+(radius-z['radius'])*f
+                if math.hypot(x-cx,y-cy)>r:
+                    passing=start-t+f*(z['shrink_end']-start); break
+        need=(out_next+8)/max(1,me['stats']['walk_speed'])*1.35+4 if out_next>0 else 0.
+        urgent=(out_cur>-2 or passing<9 or
+                (out_next>0 and (z['shrink_end']-t<need or passing-need<3)))
+        if not urgent: return zone_goal(z,x,y),False
+        grid=self.world.baked; current=self.world.nearest_free(self.world.cell(x,y)) if grid else None
+        comp=grid['component'][current[1]*grid['nx']+current[0]] if current else None
+        key=(nxt[0],nxt[1],radius,comp)
+        if self.pressure_zone_goal is not None and key==self.pressure_zone_key and t-self.pressure_zone_at<1:
+            return self.pressure_zone_goal,True
+        angle=math.atan2(y-nxt[1],x-nxt[0]); margin=min(5,radius*.3)
+        best=None; fallback=None
+        for frac in (.6,.45,.75,.3,.15,.9,0.):
+            rr=max(0.,min(radius*frac,radius-10))
+            for offset in (0.,.4,-.4,.8,-.8,1.4,-1.4,2.2,-2.2,math.pi):
+                if time.perf_counter()>=self.action_deadline-.005: break
+                px=nxt[0]+math.cos(angle+offset)*rr; py=nxt[1]+math.sin(angle+offset)*rr
+                if not self.world.inside(px,py): continue
+                cell=self.world.cell(px,py)
+                if not self.world.free_cell(cell): continue
+                px,py=self.world.cell_pos(cell)
+                if radius>12 and math.hypot(px-nxt[0],py-nxt[1])>radius-margin: continue
+                if grid and comp is not None and grid['component'][cell[1]*grid['nx']+cell[0]]!=comp:
+                    if fallback is None: fallback=(px,py)
+                    continue
+                best=(px,py); break
+            if best is not None or time.perf_counter()>=self.action_deadline-.005: break
+        self.pressure_zone_key=key; self.pressure_zone_at=t
+        self.pressure_zone_goal=best or fallback or tuple(nxt)
+        return self.pressure_zone_goal,True
 
     def pressure_fight_cube(self, obs, hp):
         """Pick up nearby cube piles while continuing to engage a target."""
@@ -345,6 +398,17 @@ class Controller:
             self.ffa = True
         self.recent_damage.extend((now, e.get('amount', 0)) for e in obs.get('events', [])
                                   if e['type'] == 'damaged' and e.get('weapon') not in ('npc', 'zone'))
+        for event in obs.get('events', []):
+            attacker=event.get('by'); bearing=event.get('bearing')
+            if (event['type']!='damaged' or event.get('weapon') in ('npc','zone') or
+                    not isinstance(attacker,int) or attacker>=100 or bearing is None): continue
+            track=self.tracks.get(attacker)
+            if track is None or now-track['seen']>2:
+                self.unseen_hit_at=now; self.unseen_hit_bearing=bearing
+                self.unseen_hit_distance={'laser':150.,'lightning':35.}.get(event.get('weapon'),115.)
+                self.unseen_hit_id=attacker
+                self.unseen_hit_position=[pos[0]+math.cos(bearing)*self.unseen_hit_distance,
+                                          pos[1]+math.sin(bearing)*self.unseen_hit_distance,pos[2]]
         self.recent_damage = [(t, amount) for t, amount in self.recent_damage if now-t < 3]
         damage_rate = sum(amount for _, amount in self.recent_damage) / 3
         survival = me['hp'] / max(1, damage_rate)
@@ -355,10 +419,25 @@ class Controller:
         # elevation. A mech above or below us may be outside pursuit range
         # even when its ground projection is close enough.
         distance = math.dist(pos, threat['pos']) if threat else math.inf
-        can_see = bool(selected and selected['track']['los'])
+        # Listed mechs are visible to the game engine. Trust that observation
+        # for a close attacker when our approximate map reports an obstruction;
+        # weapon line-of-fire checks still apply before releasing a shot.
+        can_see = bool(selected and (selected['track']['los'] or
+                       (selected['current'] and selected['active'] and distance < 40)))
         danger = bool(engaged or damage_rate > 0)
-        advantage = Combat(self.cfg).estimate(me, threat, max(1, len(engaged)), True) if threat else 0
         cautious = self.ffa or now < 6 or now-self.credit_absorbed_at < 25
+        advantage = (pressure_advantage(self.cfg, me, threat, cautious) if self.exchange_model
+                     else Combat(self.cfg).estimate(me, threat, max(1, len(engaged)), True)) if threat else 0
+        overall = (advantage if engaged else 10.) if self.exchange_model else advantage
+        if self.exchange_model and len(engaged) >= 2 and threat:
+            own_kinds={w['kind'] for w in me['weapons'] if w}
+            own_dps=max(1.,pressure_dps(self.cfg,own_kinds,me.get('cubes',0),distance,True,cautious,me['energy']>15))
+            incoming=sum(pressure_dps(self.cfg,set(item['actor'].get('weapons',[])) or {'gun'},
+                                     item['actor'].get('cubes',0),item['distance'],False,cautious)
+                         for item in engaged)
+            needed=sum(max(20,item['actor'].get('hp',1400))/own_dps for item in engaged)
+            armor=max(0.,min(.95,me['stats'].get('armor',0)))
+            overall=(me['hp']/max(1.,incoming*(1-armor)))/max(.1,needed)
         recent_hit = threat is not None and now-self.hits.get(threat['id'], -100) < 4
         provoked = bool(threat and (recent_hit or distance < 85
                          or ('laser' in threat.get('weapons', []) and threat.get('charging'))))
@@ -370,14 +449,20 @@ class Controller:
             (hp > .6 and distance < 130 and advantage >= (1.3 if cautious else .7)
              and (not cautious or laser_edge or advantage >= 3))))
         if self.retreat:
-            safe_to_fight = threat and can_see and len(engaged) <= 1 and hp > .3 and advantage > .95
-            trapped = threat and can_see and distance < 45 and len(engaged) <= 1 and now-self.retreat_started > 2
-            if (hp >= .65 and not danger) or safe_to_fight or trapped:
+            if self.exchange_model:
+                safe_to_fight = threat and selected['current'] and selected['active'] and len(engaged) <= 1 and hp > .3 and overall > .95
+                trapped = threat and can_see and selected['active'] and distance < 45 and len(engaged) <= 1 and now-self.retreat_started > 2 and overall > .35
+                recovered = (hp >= .65 and (not danger or overall > .95)) or (hp >= .55 and not danger)
+            else:
+                safe_to_fight = threat and can_see and len(engaged) <= 1 and hp > .3 and overall > .95
+                trapped = threat and can_see and distance < 45 and len(engaged) <= 1 and now-self.retreat_started > 2
+                recovered = hp >= .55 and not danger
+            if recovered or safe_to_fight or trapped:
                 self.retreat = False
         elif danger:
-            single_lost = len(engaged) <= 1 and threat and advantage < .5 and distance > 30 and survival < 25
+            single_lost = len(engaged) <= 1 and threat and overall < .5 and distance > 30 and survival < 25
             overwhelmed = len(engaged) >= 2 and ((hp < .8 and survival < 10) or (hp < .2 and survival < 20))
-            unknown_hit = not engaged and damage_rate > 0 and (hp < .6 or survival < 15)
+            unknown_hit = any(item.get('phantom') for item in engaged) and damage_rate > 0 and (hp < .6 or survival < 15)
             if single_lost or overwhelmed or unknown_hit:
                 self.retreat = True
                 self.retreat_started = now
@@ -385,14 +470,17 @@ class Controller:
         if threat and can_see and threat.get('hp', 1400) < 180 and hp > .12:
             self.retreat = False
 
-        goal = zone_goal(zone, *pos[:2])
-        deadline = zone_deadline(self.hold, zone, *pos[:2], 8)
-        travel = math.dist(pos[:2], goal) * 1.45 / max(1, me['stats']['walk_speed']) + 4
-        urgent = not me['in_zone'] or now + travel + 3 >= deadline
+        goal, urgent = self.pressure_zone(obs)
         action = {'tick': obs['tick'], 'move': [0., 0.], 'fire': [False, False], 'boost': False, 'jump': False}
         shell = self.movement.avoid_shells(obs)
         target = None
         mode = 'idle'
+        slip = None
+        if (cautious and attack and not self.retreat and not urgent and not shell and now>=self.movement.unstuck_until and threat and
+                selected['active'] and distance >= 85 and advantage < .65 and
+                threat.get('hp', 1400) >= 180 and
+                ('laser' in threat.get('weapons', []) or damage_rate > 60 or hp < .5 or len(engaged) >= 2)):
+            slip = self.movement.seek_cover(obs, actors)
         if now < self.movement.unstuck_until:
             action['move'] = list(self.movement.unstuck_dir); mode = 'unstuck'
         elif shell:
@@ -415,22 +503,26 @@ class Controller:
                 mode = 'heal'
             if can_see:
                 target = threat
+        elif slip is not None:
+            action['move'] = slip
+            mode = 'slip'
         elif attack:
             target = threat
             weapon = self.pressure_fight_weapon(obs)
             cube = self.pressure_fight_cube(obs, hp)
+            lightning = next((w for w in me['weapons'] if w and w['kind'] == 'lightning'), None)
+            nearest = min((item for item in engaged if item['current']), key=lambda item:item['distance'], default=None)
+            kite = bool(len(engaged)>=2 and nearest and nearest['distance']<=210
+                        and (not cautious or have_laser) and (have_laser or not lightning or me['energy']<=40))
             if weapon:
                 action['move'] = self.movement.navigate(me, weapon['pos'], now); mode = 'fight-weapon'
             elif cube:
                 action['move'] = self.movement.navigate(me, cube['pos'], now); mode = 'fight-cube'
-            elif len(engaged) >= 2 and distance < 130:
-                dx, dy = pos[0]-threat['pos'][0], pos[1]-threat['pos'][1]
-                length = max(1, math.hypot(dx, dy))
-                action['move'] = self.movement.navigate(me, (pos[0]+40*dx/length, pos[1]+40*dy/length), now)
-                action['boost'] = distance < 70 and me['energy'] > 45; mode = 'kite'
+            elif kite:
+                action['move'] = self.movement.pressure_kite(obs, nearest['actor'])
+                action['boost'] = nearest['distance'] < 70 and me['energy'] > 45; mode = 'kite'
             else:
                 action['move'] = self.movement.combat_move(obs, threat, actors, True, 1, self.items, desired_override=30)
-                lightning = next((w for w in me['weapons'] if w and w['kind'] == 'lightning'), None)
                 if lightning and distance > lightning['stats']['range']+10 and me['energy'] > 55:
                     action['boost'] = True
                 mode = 'fight'
@@ -446,7 +538,7 @@ class Controller:
                     if dist > 3:
                         action['move'] = self.movement.navigate(me, item['pos'], now)
                 elif kind == 'npc':
-                    visible = now-seen_at < 1 and self.tracks[ident]['los']
+                    visible = now == seen_at and self.tracks[ident]['los']
                     if visible and dist < 110:
                         target = item
                     if dist > 60 or not visible:
@@ -475,10 +567,17 @@ class Controller:
                     action['move'] = self.movement.navigate(me, roam, now); mode = 'roam'
                 elif math.dist(pos[:2], goal) > 3:
                     action['move'] = self.movement.navigate(me, goal, now); mode = 'zone-walk'
+        # The movement objective and the firing target are independent: keep
+        # shooting an active attacker while moving to safety or another goal.
+        if threat and selected['active'] and can_see and (not cautious or provoked):
+            target = threat
         if mode != 'roof-climb':
             self.movement.apply_evasion_and_recovery(obs, action, mode)
         apply_weapon_control(self, obs, action, target, threat if can_see else None, True)
-        action.update(choose_loadout(obs, self.cfg, pressure=True))
+        if any(item.get('phantom') for item in engaged) and now-self.unseen_hit_at<1.5 and (not selected or not selected['active'] or not can_see):
+            action['aim']=[self.unseen_hit_bearing,0.]
+            action['fire']=[bool(w and w['kind']=='laser' and w.get('charge',0)>0) for w in me['weapons'][:2]]
+        action.update(choose_loadout(obs, self.cfg, pressure=True, state=self))
         self.mode = mode
         return action
 

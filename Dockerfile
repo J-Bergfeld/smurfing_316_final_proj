@@ -5,6 +5,7 @@ COPY bot ./bot
 ENV PYTHONDONTWRITEBYTECODE=1 \
     BOT_POLICY=integrated \
     BOT_DECISION_POLICY=pressure \
+    BOT_PRESSURE_ROUTE_STEER=1 \
     BOT_NAV_METHOD=legacy \
     BOT_GUN_AIM_CHECK=actual \
     BOT_AIM_MODEL=dev \

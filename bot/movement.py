@@ -85,6 +85,7 @@ class Movement:
         self.nav_method=os.getenv('BOT_NAV_METHOD','spacing')
         self.pressure_strafe_enabled=os.getenv('BOT_PRESSURE_STRAFE','1') != '0'
         self.pressure_steer_enabled=os.getenv('BOT_PRESSURE_STEER','0') == '1'
+        self.pressure_route_steer=os.getenv('BOT_PRESSURE_ROUTE_STEER','0') == '1'
         self.duel_hunters = frozenset()
         self.duel_until = -1.
         self.cornered_boost = os.getenv('BOT_CORNERED_BOOST') == '1'
@@ -108,6 +109,24 @@ class Movement:
         me=obs['self']; pos=me['pos']; now=obs['t']; zone=obs['zone']
         world=self.world; radius=me['stats'].get('radius',2.5)
         plan=self.roof_plan
+        # Accept a roof reached by a detour or a landing even if it is not the
+        # one selected before the climb.  The ground approach is no longer a
+        # useful goal once our feet are already on a suitable roof.
+        if me.get('grounded',True):
+            for prism in world.solids(*pos[:2]):
+                if prism['kind']!='building' or abs(pos[2]-prism['top'])>=1.6:
+                    continue
+                ident=next(i for i, candidate in enumerate(world.prisms) if candidate is prism)
+                x0,y0,x1,y1=prism['box']; center=((x0+x1)*.5,(y0+y1)*.5)
+                if (prism['top']-world.ground(*center)<4 or
+                        math.dist(center,zone['next_center'])>zone['next_radius']-8 or
+                        not any(s is prism for s in world.solids(*center)) or
+                        not world.standable(*center,prism['top'],radius,me['stats'].get('height',9))):
+                    continue
+                if plan is None or plan['id']!=ident:
+                    self.roof_plan=plan={'id':ident,'inside':center,'top':prism['top'],
+                                         'started':now,'last_step':now,'state':'on'}
+                break
         if plan and now-plan['last_step']>1.5:
             plan['started']=now
         if plan and (math.dist(plan['inside'],zone['next_center'])>zone['next_radius']-8
@@ -184,6 +203,9 @@ class Movement:
     def apply_evasion_and_recovery(self, obs, action, mode):
         """Blend evasive movement and update stuck recovery."""
         me=obs['self']; t=obs['t']
+        if self.pressure_route_steer and any(action['move']) and mode in ('roam','loot','zone','zone-walk',
+                                                  'roof-approach','retreat','fight-cube','fight-weapon'):
+            action['move']=self.pressure_steer(obs, action['move'], action.get('boost',False))
         dodge,laser=self.avoid_projectiles(obs)
         if mode!='unstuck' and any(dodge):
             move=action['move']; mx,my=move[0]*.4+dodge[0]*.9,move[1]*.4+dodge[1]*.9; length=math.hypot(mx,my)
@@ -374,7 +396,7 @@ class Movement:
         if blocked_side: self.strafe=-self.strafe; self.strafe_until=obs['t']+.5
         return best[1]
 
-    def pressure_strafe(self, obs, target):
+    def pressure_strafe(self, obs, target, min_range=18, max_range=42):
         """Circle in a close range band, steering around immediate obstacles."""
         me=obs['self']; p=me['pos']; pos=target['pos']
         dx,dy=pos[0]-p[0],pos[1]-p[1]; d=math.hypot(dx,dy)
@@ -383,7 +405,7 @@ class Movement:
             if self.rng.random()<.75: self.strafe=-self.strafe
             self.strafe_until=obs['t']+.12+self.rng.random()*.16
         ux,uy=dx/d,dy/d
-        radial=max(-1.,min(1.,(d-42)/15)) if d>42 else max(-1.,(d-18)/15) if d<18 else 0.
+        radial=max(-1.,min(1.,(d-max_range)/15)) if d>max_range else max(-1.,(d-min_range)/15) if d<min_range else 0.
         tangent=1-.6*abs(radial)
         x,y=ux*radial-uy*self.strafe*tangent,uy*radial+ux*self.strafe*tangent
         length=math.hypot(x,y); x,y=x/length,y/length
@@ -396,12 +418,16 @@ class Movement:
                 return [vx,vy]
         return [0.,0.]
 
-    def pressure_steer(self, obs, desired):
+    def pressure_kite(self, obs, target):
+        """Keep a wider band around the nearest attacker when outnumbered."""
+        return self.pressure_strafe(obs, target, 130, 190)
+
+    def pressure_steer(self, obs, desired, boost=False):
         """Choose a short acceleration-aware step toward the desired heading."""
         me=obs['self']; p=me['pos']; stats=me['stats']; zone=obs['zone']
         grounded=me.get('grounded',True)
         acceleration=stats.get('ground_accel',58.5) if grounded else stats.get('air_accel',12.)
-        speed=stats.get('walk_speed',11.7)
+        speed=stats.get('boost_speed',19.5) if boost and grounded else stats.get('walk_speed',11.7)
         if any(w and w['kind']=='laser' and w.get('charge',0)>0 for w in me.get('weapons',[])):
             speed*=stats.get('charge_move_mult',.5)
         choices=[(0.,0.)]+[(math.cos(i*math.pi/4),math.sin(i*math.pi/4)) for i in range(8)]+[desired]
@@ -409,20 +435,40 @@ class Movement:
         ground_level=grounded and abs(p[2]-self.world.walk_at(*p[:2]))<3.5
         start_cell=self.world.cell(*p[:2]) if ground_level else None
         start_free=self.world.free_cell(start_cell) if ground_level else False
+        shots=[]; radius=stats.get('radius',2.5); height=stats.get('height',9.)
+        for shot in obs.get('projectiles',[]):
+            if shot['kind']=='mortar': continue
+            s=shot['pos']; v=shot['vel']; speed2=math.hypot(v[0],v[1])
+            if speed2<1: continue
+            rx,ry=p[0]-s[0],p[1]-s[1]
+            if math.hypot(rx,ry)>95 or (rx*v[0]+ry*v[1])/speed2 < -3: continue
+            if abs(rx*v[1]-ry*v[0])/speed2>4.5+radius: continue
+            shots.append((s,v,25 if shot['kind']=='npc' else 45))
         for dx,dy in choices:
-            vx,vy=me['vel'][:2]; x,y=p[:2]; blocked=False
-            for _ in range(6):
+            vx,vy=me['vel'][:2]; x,y=p[:2]; blocked=False; penalty=0.; progress=None
+            for step in range(14 if shots else 8):
                 tx,ty=dx*speed-vx,dy*speed-vy
                 delta=math.hypot(tx,ty); factor=min(1.,acceleration*.05/max(delta,1e-9))
                 vx+=tx*factor; vy+=ty*factor
                 nx,ny=x+vx*.05,y+vy*.05
                 cell=self.world.cell(nx,ny) if ground_level else None
                 if ground_level and cell!=start_cell and start_free and not self.world.free_cell(cell):
-                    blocked=True; vx=vy=0.; break
+                    blocked=True; vx=vy=0.; nx,ny=x,y
                 x,y=nx,ny
-            score=((x-p[0])*desired[0]+(y-p[1])*desired[1])*1.6
+                if step==5: progress=(x,y)
+                for origin,vel,damage in shots:
+                    t0=step*.05; t1=t0+.05
+                    ax,ay=origin[0]+vel[0]*t0,origin[1]+vel[1]*t0
+                    bx,by=origin[0]+vel[0]*t1,origin[1]+vel[1]*t1
+                    sx,sy=bx-ax,by-ay; denom=sx*sx+sy*sy
+                    part=max(0.,min(1.,((x-ax)*sx+(y-ay)*sy)/denom)) if denom else 0.
+                    if math.hypot(x-ax-part*sx,y-ay-part*sy)<radius+.85:
+                        z=origin[2]+vel[2]*(t0+.05*part)
+                        if p[2]-.6<z<p[2]+height+.6: penalty+=damage*.3
+            px,py=progress or (x,y)
+            score=((px-p[0])*desired[0]+(py-p[1])*desired[1])*1.6-penalty
             if blocked: score-=3
-            now=math.dist(p[:2],zone['center']); end=math.dist((x,y),zone['center'])
+            now=math.dist(p[:2],zone['center']); end=math.dist((px,py),zone['center'])
             if now < zone['radius']-.5 and end>zone['radius']-4 and end>now:
                 score-=8*(end-now)
             if dx or dy: score+=.25*(dx*previous[0]+dy*previous[1])
@@ -473,7 +519,7 @@ class Movement:
                 break
         return None
 
-    def seek_cover(self,obs,seen):
+    def seek_cover(self,obs,seen,deeper=False):
         me=obs['self']; p=me['pos']; now=obs['t']; zone=obs['zone']
         threats=sorted((a for a in seen if math.dist(p[:2],a['pos'][:2])<230),key=lambda a:math.dist(p[:2],a['pos'][:2]))[:4]
         if not threats: return None
@@ -493,7 +539,10 @@ class Movement:
                 eye=(ap[0],ap[1],ap[2]+self.cfg['mech']['eye_height']*scale)
                 if self.world.shot_clear(eye,(x,y,ground+height)) or self.world.shot_clear(eye,(x,y,ground+height*.5)): return False
             return True
-        if hidden(*p[:2]) and penalty(*p[:2])==0:
+        current_hidden=hidden(*p[:2]) and penalty(*p[:2])==0
+        nearest_now=min(math.dist(p[:2],a['pos'][:2]) for a in threats)
+        run_on=deeper and current_hidden and nearest_now<80
+        if current_hidden and not run_on:
             self.cover=tuple(p[:2]); return [0.,0.]
         start=self.world.nearest_free(self.world.cell(*p[:2]))
         if start is None: self.cover=None; return None
@@ -506,8 +555,9 @@ class Movement:
                 x,y=self.world.cell_pos(cell); checked+=1
                 if hidden(x,y):
                     nearest=min(math.hypot(a['pos'][0]-x,a['pos'][1]-y) for a in threats)
-                    value=steps*2+penalty(x,y)-min(nearest,80)*.25
-                    if value<best_score: best,best_score=(x,y),value
+                    if not run_on or nearest>=nearest_now+18:
+                        value=steps*2+penalty(x,y)-min(nearest,80)*.25
+                        if value<best_score: best,best_score=(x,y),value
             for dx,dy in ((1,0),(-1,0),(0,1),(0,-1),(1,1),(1,-1),(-1,1),(-1,-1)):
                 nxt=(cell[0]+dx,cell[1]+dy)
                 if nxt in visited or not self.world.free_cell(nxt): continue
@@ -515,4 +565,4 @@ class Movement:
                 if dx and dy and (not self.world.free_cell((cell[0]+dx,cell[1])) or not self.world.free_cell((cell[0],cell[1]+dy))): continue
                 visited.add(nxt); queue.append((nxt,steps+1))
         self.cover=best
-        return self.navigate(me,best,now) if best is not None else None
+        return self.navigate(me,best,now) if best is not None else ([0.,0.] if current_hidden else None)

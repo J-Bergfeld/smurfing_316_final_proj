@@ -1,13 +1,27 @@
 import unittest
 from unittest.mock import patch
 
-from bot.combat import aim_and_fire, apply_weapon_control, assess_pressure, mortar_solution
+from bot.combat import aim_and_fire, apply_weapon_control, assess_pressure, mortar_solution, shot_to_surface_clear, pressure_advantage, pressure_dps
 from bot.controller import Controller
 from bot.loadout import pressure_pickup, choose_loadout
 from test_bot import HELLO, enemy, observation
 
 
 class PressurePolicyTests(unittest.TestCase):
+    def test_pressure_exchange_accounts_for_weapon_range_and_armor(self):
+        self_state = observation()['self']
+        opponent = enemy(100)
+        initial = pressure_advantage(HELLO['config'], self_state, opponent, False)
+        self_state['stats']['armor'] = .3
+        self.assertGreater(pressure_advantage(HELLO['config'], self_state, opponent, False), initial)
+        self.assertGreater(pressure_dps(HELLO['config'], {'lightning'}, 0, 30, True, False), 0)
+        self.assertEqual(pressure_dps(HELLO['config'], {'lightning'}, 0, 100, True, False), 0)
+
+    def test_shot_clearance_stops_at_target_surface(self):
+        class WallAtTarget:
+            def shot_clear(self, start, end): return end[0] < 99
+        self.assertTrue(shot_to_surface_clear(WallAtTarget(), (0, 0, 0), (100, 0, 0), 2.5))
+
     def test_pressure_loadout_accepts_mortar_without_dropping_gun(self):
         gun = {'kind': 'gun'}
         self.assertEqual(pressure_pickup('mortar', [gun, None]), (True, None))
@@ -58,6 +72,57 @@ class PressurePolicyTests(unittest.TestCase):
         _, engaged, _ = assess_pressure(self.bot, self.obs)
         self.assertEqual(engaged, [])
 
+    def test_missing_opponent_is_not_treated_as_current(self):
+        self.bot.tracks[self.foe['id']]['seen'] = self.obs['t'] - .1
+        _, engaged, target = assess_pressure(self.bot, self.obs)
+        self.assertEqual(engaged, [])
+        self.assertIsNone(target)
+
+    def test_missing_nearby_drone_is_removed_when_position_is_visible(self):
+        npc = {'id': 101, 'kind': 'npc', 'pos': [5, 0, 0], 'vel': [0, 0, 0]}
+        self.bot.tracks = {101: {'actor': npc, 'seen': self.obs['t'] - .1, 'los': True}}
+        self.bot.decision_policy = 'pressure'
+        with patch.object(self.bot.world, 'shot_clear', return_value=True):
+            self.bot.update_world(self.obs)
+        self.assertNotIn(101, self.bot.tracks)
+
+    def test_unseen_attacker_direction_takes_priority_over_idle_aim(self):
+        self.bot.tracks = {}
+        self.obs['events'] = [{'type': 'damaged', 'weapon': 'gun', 'by': 3,
+                               'bearing': .7, 'amount': 40}]
+        with patch.object(self.bot.movement, 'avoid_shells', return_value=None), \
+             patch.object(self.bot.movement, 'apply_evasion_and_recovery'), \
+             patch.object(self.bot, 'choose_objective', return_value=None), \
+             patch.object(self.bot, 'pressure_roam', return_value=None), \
+             patch('bot.controller.apply_weapon_control'):
+            action = self.bot.act_pressure(self.obs)
+        self.assertEqual(action['aim'], [.7, 0.])
+        self.assertFalse(any(action['fire']))
+
+    def test_unseen_attacker_counts_as_engaged_but_is_not_selected(self):
+        self.bot.tracks = {}
+        self.bot.unseen_hit_at = self.obs['t']
+        self.bot.unseen_hit_bearing = .7
+        self.bot.unseen_hit_distance = 115.
+        known, engaged, target = assess_pressure(self.bot, self.obs)
+        self.assertEqual(len(known), 1)
+        self.assertTrue(engaged[0]['phantom'])
+        self.assertIsNone(target)
+        self.obs['t'] += 4.1
+        self.assertEqual(assess_pressure(self.bot, self.obs)[1], [])
+
+    def test_close_listed_attacker_can_be_engaged_despite_map_occlusion(self):
+        self.foe['pos'] = [30, 0, 0]
+        self.bot.tracks[self.foe['id']]['los'] = False
+        self.bot.hits[self.foe['id']] = self.obs['t']
+        self.bot.ffa = True
+        with patch.object(self.bot.movement, 'avoid_shells', return_value=None), \
+             patch.object(self.bot.movement, 'combat_move', return_value=[0, 0]), \
+             patch.object(self.bot.movement, 'apply_evasion_and_recovery'), \
+             patch('bot.controller.apply_weapon_control') as weapon_control:
+            self.bot.act_pressure(self.obs)
+        self.assertIs(weapon_control.call_args.args[3], self.foe)
+
     def test_reload_only_when_idle_or_empty_while_engaging(self):
         self.bot.decision_policy = 'pressure'
         gun = self.obs['self']['weapons'][0]
@@ -84,7 +149,7 @@ class PressurePolicyTests(unittest.TestCase):
             self.bot.act_pressure(self.obs)
             self.assertTrue(self.bot.retreat)
             self.assertEqual(self.bot.mode, 'heal')
-            self.obs['self']['hp'] = 1400
+            self.obs['self']['hp'] = 800
             self.bot.act_pressure(self.obs)
             self.assertFalse(self.bot.retreat)
 

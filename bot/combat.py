@@ -23,12 +23,90 @@ def aim_at(origin, target):
     return [math.atan2(dy,dx),math.atan2(dz,math.hypot(dx,dy))]
 
 
+def shot_to_surface_clear(world, origin, target, radius):
+    """Test the unobstructed path only as far as the target's near surface."""
+    length = math.dist(origin, target)
+    if length <= radius*.9 + .5: return True
+    fraction = (length-radius*.9)/length
+    end = tuple(origin[i]+(target[i]-origin[i])*fraction for i in range(3))
+    return world.shot_clear(origin, end)
+
+
 def mortar_pitch(origin, target, speed, gravity):
     d = distance(origin,target); dz = target[2]-origin[2]
     if d < 1: return None
     disc = speed**4 - gravity*(gravity*d*d+2*dz*speed*speed)
     if disc < 0: return None
     return math.atan((speed*speed-math.sqrt(disc))/(gravity*d))
+
+
+def pressure_gun_hit(d, ours, real_model):
+    if real_model:
+        points = ((30,.95),(60,.86),(100,.55),(150,.28),(200,.18),(230,.12)) if ours else \
+                 ((30,.92),(60,.78),(100,.57),(150,.32),(200,.15),(230,.10))
+        if d <= points[0][0]: return points[0][1]
+        for (x0,y0),(x1,y1) in zip(points,points[1:]):
+            if d <= x1: return y0+(y1-y0)*(d-x0)/(x1-x0)
+        return points[-1][1]
+    if ours:
+        if d < 60: return .95
+        if d < 120: return .95-(d-60)/60*.12
+        if d < 180: return .83-(d-120)/60*.10
+        if d < 230: return .73-(d-180)/50*.15
+        return .05
+    if d < 40: return .97
+    if d < 80: return .97-(d-40)/40*.12
+    if d < 120: return .85-(d-80)/40*.40
+    if d < 180: return .45-(d-120)/60*.20
+    return .12
+
+
+def pressure_dps(config, kinds, cubes, distance_m, ours, real_model, energy_ok=True):
+    weapons=config['weapons']; total=0.
+    if 'gun' in kinds and distance_m < weapons['gun'].get('range',230):
+        g=weapons['gun']; mag=g.get('mag',12)
+        total+=g.get('damage',45)*mag/max(.1,mag*g.get('cooldown',.24)+g.get('reload',2.4))*pressure_gun_hit(distance_m,ours,real_model)
+    if 'laser' in kinds and distance_m < weapons['laser'].get('range',280):
+        w=weapons['laser']; total+=w.get('damage',315)/max(.1,w.get('charge',.75)+w.get('cooldown',1.65))*(.75 if real_model else .85)
+    if 'lightning' in kinds and energy_ok and distance_m < weapons['lightning'].get('range',45)+6:
+        w=weapons['lightning']; total+=w.get('damage',60)/max(.1,w.get('cooldown',.25))
+    if 'mortar' in kinds and 12 < distance_m < 200:
+        w=weapons['mortar']; total+=w.get('damage',200)/max(.1,w.get('cooldown',2.6))*.25
+    cube=config['cubes']
+    return total*(1+min(cubes,cube.get('stat_cap',10))*cube.get('damage_per_cube',.04))
+
+
+def pressure_advantage(config, me, enemy, real_model=False):
+    """Estimate exchange outcomes now and after closing to practical fight ranges."""
+    current=math.dist(me['pos'],enemy['pos'])
+    ours={w['kind'] for w in me.get('weapons',[]) if w}
+    theirs=set(enemy.get('weapons',[])) or {'gun'}
+    enemy_hp=enemy.get('hp',enemy.get('max_hp',1400)) or enemy.get('max_hp',1400)
+    armor=max(0.,min(.95,me.get('stats',{}).get('armor',0)))
+    our_energy=me.get('energy',0)>15
+    def dps_at(d):
+        enemy_kinds=theirs
+        if 'lightning' in ours and me.get('energy',0)>20 and d<config['weapons']['lightning'].get('range',45)-3:
+            enemy_kinds=theirs-{'laser'}
+        return (pressure_dps(config,ours,me.get('cubes',0),d,True,real_model,our_energy),
+                pressure_dps(config,enemy_kinds,enemy.get('cubes',0),d,False,real_model)*(1-armor))
+    best=0.
+    for r, here in ((current,True),(24.,False),(38.,False)):
+        mine,incoming=dps_at(r)
+        if mine < 1: continue
+        move=abs(current-r); cost=gain=0.
+        if not here and move>8:
+            mid_mine,mid_incoming=dps_at((current+r)*.5)
+            cost=mid_incoming*(move/9)*.8
+            if real_model: gain=mid_mine*(move/9)*.8
+            if r>current: cost+=60
+        remaining=me['hp']-cost
+        if remaining<=0: continue
+        enemy_left=max(20,enemy_hp-gain)
+        advantage=10. if incoming<1 else (remaining/incoming)/(enemy_left/mine)
+        if here: advantage*=1.05
+        best=max(best,advantage)
+    return best
 
 
 class Combat:
@@ -224,7 +302,8 @@ def aim_and_fire(me, target, config, squad=False, world=None, pressure=False, al
     hy,hp=math.atan2(dy,dx),math.atan2(center[2]-muzzle[2],math.hypot(dx,dy))
     beam_clear = True
     if pressure and callable(getattr(world, 'shot_clear', None)) and any(w and w['kind'] in ('laser', 'lightning') for w in me['weapons']):
-        beam_clear = world.shot_clear(muzzle, (center[0]+tv[0]*latency, center[1]+tv[1]*latency, center[2]))
+        point = (center[0]+tv[0]*latency, center[1]+tv[1]*latency, center[2])
+        beam_clear = shot_to_surface_clear(world, muzzle, point, radius)
     aim=[gy,gp] if gun else [hy,hp]; fire=[False,False]
     laser=next((w for w in weapons if w and w['kind']=='laser'),None)
     laser_ready=False
@@ -244,7 +323,7 @@ def aim_and_fire(me, target, config, squad=False, world=None, pressure=False, al
             fire[i]=bool(dist<gun_range and w.get('ammo',0)>0 and w.get('reload',0)<=0 and
                          max(0.,ey(gy)-st['turn_rate']*(.045 if pressure else .05))<tol_y and max(0.,ep(gp)-st['pitch_rate']*(.045 if pressure else .05))<tol_p)
             if fire[i] and use_dev_aim and world is not None:
-                fire[i]=world.shot_clear(gun_muzzle,gun_point)
+                fire[i]=shot_to_surface_clear(world,gun_muzzle,gun_point,radius) if pressure else world.shot_clear(gun_muzzle,gun_point)
         elif wk=='lightning':
             if pressure:
                 relative_speed=math.hypot(tv[0]-vel[0],tv[1]-vel[1])
@@ -341,7 +420,7 @@ def assess_pressure(state, obs):
             continue
         d = math.dist(me['pos'], actor['pos'])
         ground_distance = math.dist(me['pos'][:2], actor['pos'][:2])
-        current = age < .11
+        current = track['seen'] == now
         bearing = math.atan2(me['pos'][1]-actor['pos'][1], me['pos'][0]-actor['pos'][0])
         aim_error = abs(angle_diff(actor.get('aim', [bearing])[0], bearing))
         if current and aim_error < .12+math.atan2(1.5*me['stats']['radius'],max(1,ground_distance)):
@@ -362,6 +441,19 @@ def assess_pressure(state, obs):
         known.append(item)
         if active:
             engaged.append(item)
+    unseen_at = getattr(state, 'unseen_hit_at', -100)
+    unseen_track = state.tracks.get(getattr(state, 'unseen_hit_id', None))
+    if now-unseen_at < 4 and (unseen_track is None or now-unseen_track['seen'] > 1):
+        bearing = state.unseen_hit_bearing
+        pos = getattr(state, 'unseen_hit_position', None) or [me['pos'][0]+math.cos(bearing)*state.unseen_hit_distance,
+                                                              me['pos'][1]+math.sin(bearing)*state.unseen_hit_distance, me['pos'][2]]
+        distance = math.dist(me['pos'], pos)
+        ghost = {'id': -1, 'kind': 'mech', 'pos': pos,
+                 'vel': [0, 0, 0], 'hp': 1400, 'weapons': ['gun']}
+        item = {'actor': ghost, 'track': {'actor': ghost, 'seen': unseen_at, 'los': False},
+                'distance': distance, 'current': False, 'active': True, 'phantom': True}
+        known.append(item)
+        engaged.append(item)
     visible = [item for item in known if item['current']]
     target = max(visible, key=lambda item: (1.5 if item['track']['los'] else 1)/(1+item['distance']/60), default=None)
     return known, engaged, target
@@ -425,7 +517,7 @@ def apply_weapon_control(state, obs, action, target, foe, squad):
         candidates=[]
         for track in state.tracks.values():
             actor=track['actor']
-            if actor['kind']!='npc' or t-track['seen']>.5 or not track['los']: continue
+            if actor['kind']!='npc' or (track['seen'] != t if pressure else t-track['seen']>.5) or not track['los']: continue
             d=math.dist(p[:2],actor['pos'][:2])
             bearing=math.atan2(actor['pos'][1]-p[1],actor['pos'][0]-p[0])
             error=abs(angle_diff(bearing,state.npc_bearing)) if state.npc_bearing is not None else math.inf

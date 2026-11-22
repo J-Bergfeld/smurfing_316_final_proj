@@ -3,7 +3,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from bot.loadout import choose_objective
+from bot.loadout import choose_objective, choose_loadout
 from test_bot import HELLO, observation
 
 
@@ -44,6 +44,38 @@ class SupplyRouteTests(unittest.TestCase):
         self.state.world.line_walkable.return_value = False
         self.assertEqual(self.choose()[1], 'drops')
         self.state.world.line_walkable.assert_not_called()
+
+    def test_pressure_prefers_a_hidden_cube_to_a_similar_exposed_one(self):
+        self.state.decision_policy = 'pressure'
+        self.state.ffa = True
+        self.state.supply_drops = False
+        self.obs['self']['cubes'] = 0
+        self.state.items = {
+            5000: ('cubes', {'id': 5000, 'pos': [30, 0, 0]}, 100),
+            5001: ('cubes', {'id': 5001, 'pos': [40, 0, 0]}, 100),
+        }
+        self.state.tracks = {7: {'actor': {'kind': 'mech', 'pos': [100, 0, 0]}, 'seen': 100}}
+        self.state.world.shot_clear = Mock(side_effect=lambda eye, target: target[0] == 30)
+        self.assertEqual(self.choose()[0], 5001)
+
+    def test_pressure_take_request_has_a_short_cooldown(self):
+        state = SimpleNamespace()
+        self.obs['self']['weapons'][1] = None
+        self.obs['pickups'] = [{'id': 8001, 'kind': 'laser', 'pos': [0, 0, 0]}]
+        first = choose_loadout(self.obs, HELLO['config'], pressure=True, state=state)
+        self.assertEqual(first['take'], 8001)
+        self.obs['t'] += .1
+        self.assertNotIn('take', choose_loadout(self.obs, HELLO['config'], pressure=True, state=state))
+        self.obs['t'] += .2
+        self.assertEqual(choose_loadout(self.obs, HELLO['config'], pressure=True, state=state)['take'], 8001)
+
+    def test_pressure_can_take_recently_seen_pickup(self):
+        self.obs['self']['weapons'][1] = None
+        item = {'id': 8001, 'kind': 'laser', 'pos': [0, 0, 0]}
+        state = SimpleNamespace(items={8001: ('pickups', item, self.obs['t']-.4)})
+        self.assertEqual(choose_loadout(self.obs, HELLO['config'], pressure=True, state=state)['take'], 8001)
+        self.obs['t'] += .2
+        self.assertNotIn('take', choose_loadout(self.obs, HELLO['config'], pressure=True, state=state))
 
 
 if __name__ == '__main__':
